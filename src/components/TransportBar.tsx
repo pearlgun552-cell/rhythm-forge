@@ -1,5 +1,6 @@
 import type { Project } from '../types/music';
 import type { TransportStatus } from '../sequencer/Sequencer';
+import { barsForBeats, beatsPerBar } from '../utils/musicConstants';
 
 interface TransportBarProps {
   project: Project;
@@ -10,6 +11,7 @@ interface TransportBarProps {
   isDirty: boolean;
   onNameChange: (name: string) => void;
   onBpmChange: (bpm: number) => void;
+  onProjectLengthChange: (beats: number) => void;
   onKeyChange: (key: string) => void;
   onPlay: () => void;
   onPause: () => void;
@@ -19,12 +21,17 @@ interface TransportBarProps {
   onSave: () => void;
 }
 
-const KEYS = ['C major', 'C minor', 'D minor', 'E minor', 'F minor', 'G minor', 'A minor', 'B minor'];
+const KEYS = [
+  'C major', 'G major', 'D major', 'A major', 'E major', 'B major', 'F# major', 'C# major',
+  'F major', 'Bb major', 'Eb major', 'Ab major', 'Db major',
+  'C minor', 'A minor', 'D minor', 'E minor', 'F# minor', 'B minor', 'G minor',
+];
 
 export function TransportBar(props: TransportBarProps) {
   const beat = Math.floor(props.positionBeats);
-  const barNumber = Math.floor(beat / 4) + 1;
-  const beatNumber = (beat % 4) + 1;
+  const barBeats = beatsPerBar(props.project.timeSignature);
+  const barNumber = Math.floor(beat / barBeats) + 1;
+  const beatNumber = (beat % barBeats) + 1;
 
   return (
     <header className="transport-bar">
@@ -68,9 +75,15 @@ export function TransportBar(props: TransportBarProps) {
             onChange={(event) => props.onBpmChange(Number(event.target.value) || 174)}
           />
         </label>
+        <span className="time-signature-readout">{props.project.timeSignature.numerator}/{props.project.timeSignature.denominator} · {props.project.bpm} BPM</span>
         <label className="compact-field">KEY
           <select aria-label="Key" value={props.project.key} onChange={(event) => props.onKeyChange(event.target.value)}>
             {KEYS.map((key) => <option key={key}>{key}</option>)}
+          </select>
+        </label>
+        <label className="compact-field">LENGTH
+          <select aria-label="Project Length" value={props.project.projectLengthBeats} onChange={(event) => props.onProjectLengthChange(Number(event.target.value))}>
+            {[128, 256, 512].map((beats) => <option key={beats} value={beats}>{barsForBeats(beats, props.project.timeSignature)} bars</option>)}
           </select>
         </label>
         <button className={props.metronome ? 'text-control active' : 'text-control'} onClick={() => props.onMetronomeChange(!props.metronome)} aria-pressed={props.metronome}>
