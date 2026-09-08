@@ -1,0 +1,55 @@
+name: Windows Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Package Windows x64
+        run: npm run package:win
+
+      - name: Create portable ZIP
+        shell: pwsh
+        run: Compress-Archive -Path 'release/Rhythm Forge-win32-x64/*' -DestinationPath 'release/Rhythm-Forge-Windows-x64.zip' -Force
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Rhythm-Forge-Windows-x64
+          path: release/Rhythm-Forge-Windows-x64.zip
+          if-no-files-found: error
+
+      - name: Attach ZIP to GitHub Release
+        if: github.event_name == 'release'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload '${{ github.event.release.tag_name }}' 'release/Rhythm-Forge-Windows-x64.zip' --clobber
