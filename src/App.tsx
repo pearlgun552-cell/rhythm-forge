@@ -5,6 +5,7 @@ import { TrackList } from './components/TrackList';
 import { TransportBar } from './components/TransportBar';
 import { useComputerKeyboard } from './instruments/useComputerKeyboard';
 import { PianoRoll } from './piano-roll/PianoRoll';
+import { audioEngine } from './audio/AudioEngine';
 import { sequencer } from './sequencer/transport';
 import { useTransport } from './sequencer/useTransport';
 import { projectStore, useProjectStore } from './store/projectStore';
@@ -15,7 +16,7 @@ function isEditingText(): boolean {
 }
 
 export default function App() {
-  const { project, selectedTrackId, selectedNoteId, isDirty } = useProjectStore();
+  const { project, selectedTrackId, selectedNoteId, selectedNoteIds, isDirty } = useProjectStore();
   const transport = useTransport();
   const [metronome, setMetronome] = useState(false);
   const [octave, setOctave] = useState(4);
@@ -53,7 +54,19 @@ export default function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.key === 'Delete' || event.key === 'Backspace') && !isEditingText()) {
         event.preventDefault();
-        projectStore.deleteSelectedNote();
+        projectStore.deleteSelectedNotes();
+      }
+      if ((event.metaKey || event.ctrlKey) && event.code === 'KeyC' && !isEditingText()) {
+        event.preventDefault();
+        projectStore.copySelectedNotes();
+      }
+      if ((event.metaKey || event.ctrlKey) && event.code === 'KeyV' && !isEditingText()) {
+        event.preventDefault();
+        projectStore.pasteNotes();
+      }
+      if ((event.metaKey || event.ctrlKey) && event.code === 'KeyD' && !isEditingText()) {
+        event.preventDefault();
+        projectStore.duplicateSelectedNotes();
       }
       if (event.code === 'Space' && !isEditingText()) {
         event.preventDefault();
@@ -68,6 +81,11 @@ export default function App() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [pauseTransport, toggleRecording, transport.status]);
+
+  useEffect(() => {
+    audioEngine.syncProject(project);
+    sequencer.projectChanged();
+  }, [project]);
 
   useEffect(() => () => {
     finishRecording();
@@ -84,6 +102,12 @@ export default function App() {
     projectStore.setBpm(bpm);
   };
 
+  const deleteTrack = useCallback((trackId: string) => {
+    if (transport.status !== 'stopped') sequencer.stop();
+    else audioEngine.stopAll();
+    projectStore.deleteTrack(trackId);
+  }, [transport.status]);
+
   return (
     <div className="app-shell">
       <TransportBar
@@ -95,6 +119,7 @@ export default function App() {
         isDirty={isDirty}
         onNameChange={(name) => projectStore.setProjectName(name)}
         onBpmChange={changeBpm}
+        onProjectLengthChange={(beats) => projectStore.setProjectLengthBeats(beats)}
         onKeyChange={(key) => projectStore.setKey(key)}
         onPlay={() => void sequencer.play()}
         onPause={pauseTransport}
@@ -104,18 +129,23 @@ export default function App() {
         onSave={() => projectStore.save()}
       />
       <main className="studio-layout">
-        <TrackList tracks={project.tracks} selectedTrackId={selectedTrackId} />
+        <TrackList
+          tracks={project.tracks}
+          selectedTrackId={selectedTrackId}
+          onDeleteTrack={deleteTrack}
+        />
         <div className="editor-column">
-          <Arrangement tracks={project.tracks} selectedTrackId={selectedTrackId} positionBeats={transport.positionBeats} />
+          <Arrangement project={project} tracks={project.tracks} selectedTrackId={selectedTrackId} />
           <PianoRoll
             track={selectedTrack}
             selectedNoteId={selectedNoteId}
+            selectedNoteIds={selectedNoteIds}
             activePitches={activePitches}
-            positionBeats={transport.positionBeats}
           />
         </div>
         <InstrumentPanel
           track={selectedTrack}
+          project={project}
           octave={octave}
           activePitches={activePitches}
           onOctaveChange={changeOctave}

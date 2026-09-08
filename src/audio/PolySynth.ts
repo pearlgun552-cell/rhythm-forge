@@ -10,6 +10,8 @@ export interface VoiceOptions {
   velocity?: number;
   trackVolume?: number;
   pan?: number;
+  trackId?: string;
+  output?: AudioNode;
 }
 
 const midiToFrequency = (pitch: number) => 440 * 2 ** ((pitch - 69) / 12);
@@ -84,6 +86,12 @@ export class PolySynth {
     this.scheduledVoices.clear();
   }
 
+  stopScheduled(): void {
+    const now = this.context.currentTime;
+    this.scheduledVoices.forEach((voice) => this.stopVoiceImmediately(voice, now));
+    this.scheduledVoices.clear();
+  }
+
   private createVoice(pitch: number, instrument: Instrument, options: VoiceOptions): Voice {
     const oscillator = this.context.createOscillator();
     const gain = this.context.createGain();
@@ -93,7 +101,7 @@ export class PolySynth {
     panner.pan.value = options.pan ?? 0;
     oscillator.connect(gain);
     gain.connect(panner);
-    panner.connect(this.output);
+    panner.connect(options.output ?? this.output);
     return { oscillator, gain, panner };
   }
 

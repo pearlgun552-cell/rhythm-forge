@@ -1,6 +1,6 @@
 import { audioEngine } from '../audio/AudioEngine';
-import type { Project } from '../types/music';
-import { LOOP_BEATS } from '../utils/musicConstants';
+import type { Project, Track } from '../types/music';
+import { beatsPerBar } from '../utils/musicConstants';
 
 export type TransportStatus = 'stopped' | 'playing' | 'paused';
 
@@ -41,10 +41,23 @@ export class Sequencer {
     return this.currentAbsoluteBeat();
   }
 
+  projectChanged(): void {
+    if (this.status !== 'playing') return;
+    this.positionBeats = Math.min(this.getProject().projectLengthBeats, this.currentAbsoluteBeat());
+    this.anchorBeat = this.positionBeats;
+    this.anchorTime = audioEngine.currentTime;
+    this.scheduleCursorBeat = this.positionBeats;
+    audioEngine.stopScheduled();
+    this.scheduleAhead();
+  }
+
   async play(): Promise<void> {
+    const project = this.getProject();
     if (this.status === 'playing') return;
+    if (this.positionBeats >= project.projectLengthBeats) this.positionBeats = 0;
     await audioEngine.resume();
-    await audioEngine.prepareInstruments(this.getProject().tracks.map((track) => track.instrument));
+    audioEngine.syncProject(project);
+    await audioEngine.prepareInstruments(project.tracks.filter((track) => track.type === 'instrument').map((track) => track.instrument));
     this.anchorTime = audioEngine.currentTime;
     this.anchorBeat = this.positionBeats;
     this.scheduleCursorBeat = this.positionBeats;
@@ -57,7 +70,7 @@ export class Sequencer {
 
   pause(): void {
     if (this.status !== 'playing') return;
-    this.positionBeats = this.currentAbsoluteBeat() % LOOP_BEATS;
+    this.positionBeats = Math.min(this.getProject().projectLengthBeats, this.currentAbsoluteBeat());
     this.clearTimers();
     audioEngine.stopAll();
     this.status = 'paused';
@@ -85,42 +98,73 @@ export class Sequencer {
     const project = this.getProject();
     const beatsPerSecond = project.bpm / 60;
     const rangeStart = this.scheduleCursorBeat;
-    const rangeEnd = Math.max(rangeStart, this.currentAbsoluteBeat() + LOOKAHEAD_SECONDS * beatsPerSecond);
+    const rangeEnd = Math.min(
+      project.projectLengthBeats,
+      Math.max(rangeStart, this.currentAbsoluteBeat() + LOOKAHEAD_SECONDS * beatsPerSecond),
+    );
     const anySolo = project.tracks.some((track) => track.solo);
 
     project.tracks.forEach((track) => {
       if (track.mute || (anySolo && !track.solo)) return;
-      const firstCycle = Math.floor(rangeStart / LOOP_BEATS) - 1;
-      const lastCycle = Math.floor(rangeEnd / LOOP_BEATS) + 1;
-      for (let cycle = firstCycle; cycle <= lastCycle; cycle += 1) {
-        track.notes.forEach((note) => {
-          const absoluteStart = cycle * LOOP_BEATS + note.start;
-          if (absoluteStart < rangeStart || absoluteStart >= rangeEnd) return;
-          const startTime = this.anchorTime + (absoluteStart - this.anchorBeat) / beatsPerSecond;
-          audioEngine.scheduleNote(
-            note.pitch,
-            Math.max(audioEngine.currentTime, startTime),
-            note.duration / beatsPerSecond,
-            track.instrument,
-            { velocity: note.velocity, trackVolume: track.volume, pan: track.pan },
-          );
-        });
-      }
+      if (track.type === 'drum') this.scheduleDrumTrack(track, rangeStart, rangeEnd, project, beatsPerSecond);
+      else this.scheduleInstrumentTrack(track, rangeStart, rangeEnd, project, beatsPerSecond);
     });
 
     if (this.metronomeEnabled) {
       const firstBeat = Math.ceil(rangeStart);
       for (let beat = firstBeat; beat < rangeEnd; beat += 1) {
         const time = this.anchorTime + (beat - this.anchorBeat) / beatsPerSecond;
-        audioEngine.scheduleMetronome(Math.max(audioEngine.currentTime, time), beat % 4 === 0);
+        audioEngine.scheduleMetronome(Math.max(audioEngine.currentTime, time), beat % beatsPerBar(project.timeSignature) === 0);
       }
     }
     this.scheduleCursorBeat = rangeEnd;
   }
 
+  private scheduleInstrumentTrack(track: Track, rangeStart: number, rangeEnd: number, project: Project, beatsPerSecond: number): void {
+    track.notes.forEach((note) => {
+      const absoluteStart = note.start;
+      if (absoluteStart < rangeStart || absoluteStart >= rangeEnd) return;
+      const startTime = this.anchorTime + (absoluteStart - this.anchorBeat) / beatsPerSecond;
+      audioEngine.scheduleNote(
+        note.pitch,
+        Math.max(audioEngine.currentTime, startTime),
+        note.duration / beatsPerSecond,
+        track.instrument,
+        { velocity: note.velocity, trackVolume: track.volume, pan: track.pan, trackId: track.id },
+      );
+    });
+  }
+
+  private scheduleDrumTrack(track: Track, rangeStart: number, rangeEnd: number, project: Project, beatsPerSecond: number): void {
+    const pattern = track.drumPattern;
+    if (!pattern) return;
+    const barBeats = beatsPerBar(project.timeSignature);
+    const stepBeats = barBeats / pattern.stepCount;
+    const firstBar = Math.max(0, Math.floor(rangeStart / barBeats) - 1);
+    const lastBar = Math.ceil(rangeEnd / barBeats) + 1;
+    (Object.keys(pattern.steps) as Array<keyof typeof pattern.steps>).forEach((sound) => {
+      pattern.steps[sound].forEach((enabled, step) => {
+        if (!enabled) return;
+        for (let bar = firstBar; bar <= lastBar; bar += 1) {
+          const absoluteStart = bar * barBeats + step * stepBeats;
+          if (absoluteStart < rangeStart || absoluteStart >= rangeEnd || absoluteStart >= project.projectLengthBeats) continue;
+          const startTime = this.anchorTime + (absoluteStart - this.anchorBeat) / beatsPerSecond;
+          audioEngine.scheduleDrum(sound, Math.max(audioEngine.currentTime, startTime), track.id, 0.86);
+        }
+      });
+    });
+  }
+
   private tickUi = (): void => {
     if (this.status !== 'playing') return;
-    this.positionBeats = this.currentAbsoluteBeat() % LOOP_BEATS;
+    const project = this.getProject();
+    this.positionBeats = Math.min(project.projectLengthBeats, this.currentAbsoluteBeat());
+    if (this.positionBeats >= project.projectLengthBeats) {
+      this.clearTimers();
+      this.status = 'stopped';
+      this.emit();
+      return;
+    }
     this.emit();
     this.animationFrame = requestAnimationFrame(this.tickUi);
   };
