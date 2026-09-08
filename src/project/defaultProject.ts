@@ -1,5 +1,6 @@
 import type { DrumPattern, Instrument, InstrumentPreset, Project, Track, TrackType } from '../types/music';
 import { createId } from '../utils/id';
+import { DEFAULT_PROJECT_LENGTH_BEATS } from '../utils/musicConstants';
 
 export const defaultInstrument: Instrument = {
   type: 'poly-synth',
@@ -60,7 +61,7 @@ export function createDefaultProject(): Project {
     bpm: 174,
     key: 'C minor',
     timeSignature: { numerator: 4, denominator: 4 },
-    projectLengthBeats: 64,
+    projectLengthBeats: DEFAULT_PROJECT_LENGTH_BEATS,
     tracks: [createTrack('Lead')],
     sections: [],
     reverb: { enabled: false, mix: 0.22, decay: 1.8 },

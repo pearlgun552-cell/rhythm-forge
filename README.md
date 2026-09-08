@@ -82,7 +82,7 @@ npm run package:mac
 - `Ctrl/Cmd + C/V/D`：复制、粘贴、重复选中的音符；`Delete` / `Backspace` 删除
 - 左侧 `+ Instrument Track` / `+ Drum Track`：添加独立音轨；音轨行内 `⋯` 或右键可删除
 - Arrangement 的 `＋ Section`：规划 Intro、Verse、Pre-Chorus、Chorus、Bridge、Outro，并设置起点、长度和调性覆盖
-- 顶部 `LENGTH`：选择 8 / 16 / 32 小节（内部支持更长的 projectLengthBeats）
+- 顶部 `LENGTH`：选择 32 / 64 / 128 小节（内部使用 projectLengthBeats）
 - Drum Track 使用 16-Step Sequencer；右侧可调整 Track Volume、Pan、Mute、Solo 和 Master Reverb
 - 直接编辑音轨名称输入框：重命名
 
@@ -109,7 +109,7 @@ src/utils/musicTheory.ts  调性与 Scale Guide
 
 ## 当前边界
 
-当前是 8–32 小节长度选择的 MVP；Piano Roll 已支持移动、缩放、多选、复制粘贴与 Grid Snap，Arrangement 支持 Sections，鼓组使用基础 16-Step Sequencer。尚无音频轨、麦克风录音、WAV/MP3 导出、VST、AI 或云功能。
+当前是 32–128 小节长度选择的 MVP；Piano Roll 已支持移动、缩放、多选、复制粘贴与 Grid Snap，Arrangement 支持 Sections，鼓组使用基础 16-Step Sequencer。尚无音频轨、麦克风录音、WAV/MP3 导出、VST、AI 或云功能。
 
 钢琴采样署名和许可证见 `public/samples/piano/LICENSE.md`。
 

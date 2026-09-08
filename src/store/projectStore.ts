@@ -58,7 +58,7 @@ function normalizeProject(raw: Partial<Project>): Project | null {
       ...(type === 'drum' ? { drumPattern: normalizeDrumPattern(track.drumPattern) } : {}),
     } as Track;
   });
-  const projectLengthBeats = clamp(Number(raw.projectLengthBeats ?? DEFAULT_PROJECT_LENGTH_BEATS), 16, 512);
+  const projectLengthBeats = clamp(Number(raw.projectLengthBeats ?? DEFAULT_PROJECT_LENGTH_BEATS), 128, 512);
   return {
     ...fallback,
     ...raw,
@@ -171,7 +171,7 @@ class ProjectStore {
   }
 
   setProjectLengthBeats(projectLengthBeats: number): void {
-    this.updateProject((project) => ({ ...project, projectLengthBeats: clamp(projectLengthBeats, 16, 512) }));
+    this.updateProject((project) => ({ ...project, projectLengthBeats: clamp(projectLengthBeats, 128, 512) }));
   }
 
   setReverb(changes: Partial<Project['reverb']>): void {
