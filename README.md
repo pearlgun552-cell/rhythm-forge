@@ -77,9 +77,13 @@ npm run package:mac
 - `Z / X`：降低 / 升高八度
 - `Space`：播放 / 暂停
 - 右侧 `Sound Engine`：每条音轨可在 Poly Synth 与 Grand Piano 之间切换
-- 点击 Piano Roll 网格：按 1/16 拍创建音符
-- 点击音符后按 `Delete` 或 `Backspace`：删除音符
-- 左侧 `+ Add Instrument Track`：添加独立音轨
+- Piano Roll 的 `SNAP` 与 `LENGTH` 分开控制；支持 1/4、1/8、1/16 网格和 1/16–1 Bar 音符长度
+- 拖动音符移动 start / pitch，拖动右侧把手调整 duration；Shift 点击或拖框进行多选
+- `Ctrl/Cmd + C/V/D`：复制、粘贴、重复选中的音符；`Delete` / `Backspace` 删除
+- 左侧 `+ Instrument Track` / `+ Drum Track`：添加独立音轨；音轨行内 `⋯` 或右键可删除
+- Arrangement 的 `＋ Section`：规划 Intro、Verse、Pre-Chorus、Chorus、Bridge、Outro，并设置起点、长度和调性覆盖
+- 顶部 `LENGTH`：选择 32 / 64 / 128 小节（内部使用 projectLengthBeats）
+- Drum Track 使用 16-Step Sequencer；右侧可调整 Track Volume、Pan、Mute、Solo 和 Master Reverb
 - 直接编辑音轨名称输入框：重命名
 
 ## 目录
@@ -89,12 +93,14 @@ electron/             Electron 主进程
 src/audio/            AudioEngine 与 PolySynth
 src/sequencer/        AudioContext 时钟调度与 Transport 状态
 src/piano-roll/       Piano Roll 编辑视图
+src/components/DrumStepSequencer.tsx  16-Step 鼓组编辑器
 src/instruments/      电脑键盘映射与演奏逻辑
 src/project/          默认项目与工厂函数
 src/store/            统一 Project Store
 src/components/       Transport、Track、Arrangement、Instrument UI
 src/types/            核心音乐数据类型
 src/utils/            通用工具
+src/utils/musicTheory.ts  调性与 Scale Guide
 ```
 
 ## 调度说明
@@ -103,7 +109,7 @@ src/utils/            通用工具
 
 ## 当前边界
 
-固定 16 小节循环；Piano Roll 支持创建、选择、删除和电脑键盘录入，但尚无拖动、缩放、多选、复制粘贴与手动量化。本轮没有混音台、音频轨、麦克风录音、导出、VST、AI 或云功能。
+当前是 32–128 小节长度选择的 MVP；Piano Roll 已支持移动、缩放、多选、复制粘贴与 Grid Snap，Arrangement 支持 Sections，鼓组使用基础 16-Step Sequencer。尚无音频轨、麦克风录音、WAV/MP3 导出、VST、AI 或云功能。
 
 钢琴采样署名和许可证见 `public/samples/piano/LICENSE.md`。
 
