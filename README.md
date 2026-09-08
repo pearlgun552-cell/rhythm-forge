@@ -17,12 +17,14 @@
 
 ## Windows 用户直接使用
 
-每次推送到 `main` 后，GitHub Actions 都会生成 Windows x64 便携版：
+从 [Releases](https://github.com/pearlgun552-cell/rhythm-forge/releases/latest) 下载最新的 `Rhythm-Forge-Windows-x64.zip`，解压后双击 `Rhythm Forge.exe`。
+
+如果需要测试最新提交，每次推送到 `main` 后，GitHub Actions 也会生成 Windows x64 便携版：
 
 1. 打开仓库的 **Actions → Windows Build**。
 2. 进入最新一次成功的构建。
 3. 在 **Artifacts** 下载 `Rhythm-Forge-Windows-x64`。
-4. 解压后双击 `Rhythm Forge.exe`。
+4. 解压两层 ZIP 后双击 `Rhythm Forge.exe`。
 
 当前 Windows 构建尚未购买商业代码签名证书，因此系统可能显示 SmartScreen 提示。源码和构建流程全部公开，可以在仓库中核对。
 
