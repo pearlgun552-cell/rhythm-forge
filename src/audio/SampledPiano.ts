@@ -125,6 +125,12 @@ export class SampledPiano {
     this.scheduledVoices.clear();
   }
 
+  stopScheduled(): void {
+    const now = this.context.currentTime;
+    this.scheduledVoices.forEach((voice) => this.stopVoiceImmediately(voice, now));
+    this.scheduledVoices.clear();
+  }
+
   private createVoice(pitch: number, instrument: Instrument, options: VoiceOptions): PianoVoice | null {
     const rootPitch = this.nearestSamplePitch(pitch);
     const buffer = this.buffers.get(rootPitch);
@@ -137,7 +143,7 @@ export class SampledPiano {
     panner.pan.value = options.pan ?? 0;
     source.connect(gain);
     gain.connect(panner);
-    panner.connect(this.destination);
+    panner.connect(options.output ?? this.destination);
     return { source, gain, panner };
   }
 
