@@ -4,7 +4,7 @@ import { sequencer } from '../sequencer/transport';
 import { projectStore } from '../store/projectStore';
 import type { Track } from '../types/music';
 import { createId } from '../utils/id';
-import { GRID_BEATS, LOOP_BEATS } from '../utils/musicConstants';
+import { GRID_BEATS } from '../utils/musicConstants';
 import { pitchForCode } from './keyboardMap';
 
 interface ActiveKey {
@@ -31,10 +31,6 @@ function quantize(value: number): number {
   return Math.round(value / GRID_BEATS) * GRID_BEATS;
 }
 
-function normalizeLoopBeat(beat: number): number {
-  return ((beat % LOOP_BEATS) + LOOP_BEATS) % LOOP_BEATS;
-}
-
 export function useComputerKeyboard(
   track: Track | undefined,
   octave: number,
@@ -55,9 +51,10 @@ export function useComputerKeyboard(
   setOctaveRef.current = setOctave;
 
   const commitRecording = useCallback((recording: PendingRecording, endBeat: number) => {
-    const start = normalizeLoopBeat(quantize(recording.startBeat));
+    const projectLength = projectStore.getSnapshot().project.projectLengthBeats;
+    const start = Math.max(0, Math.min(projectLength - GRID_BEATS, quantize(recording.startBeat)));
     const playedDuration = Math.max(GRID_BEATS, quantize(endBeat - recording.startBeat));
-    const duration = Math.min(playedDuration, LOOP_BEATS - start);
+    const duration = Math.min(playedDuration, projectLength - start);
     projectStore.addNote(recording.trackId, {
       id: createId('note'),
       pitch: recording.pitch,
@@ -97,7 +94,7 @@ export function useComputerKeyboard(
       }
       const currentTrack = trackRef.current;
       const pitch = pitchForCode(event.code, octaveRef.current);
-      if (pitch === null || !currentTrack || event.repeat || activeCodes.current.has(event.code)) return;
+      if (pitch === null || !currentTrack || currentTrack.type !== 'instrument' || event.repeat || activeCodes.current.has(event.code)) return;
       event.preventDefault();
       activeCodes.current.set(event.code, { pitch, release: currentTrack.instrument.adsr.release });
       setActivePitches(new Set(Array.from(activeCodes.current.values(), (activeKey) => activeKey.pitch)));
@@ -115,6 +112,7 @@ export function useComputerKeyboard(
         velocity: 0.9,
         trackVolume: currentTrack.volume,
         pan: currentTrack.pan,
+        trackId: currentTrack.id,
       });
     };
 
