@@ -75,6 +75,14 @@ export default function App() {
         event.preventDefault();
         projectStore.save();
       }
+      if ((event.metaKey || event.ctrlKey) && event.code === 'KeyZ' && !isEditingText()) {
+        event.preventDefault();
+        if (event.shiftKey) projectStore.redo(); else projectStore.undo();
+      }
+      if (event.ctrlKey && event.code === 'KeyY' && !isEditingText()) {
+        event.preventDefault();
+        projectStore.redo();
+      }
       if (event.code === 'Space' && !isEditingText()) {
         event.preventDefault();
         if (transport.status === 'playing') pauseTransport();
@@ -172,6 +180,10 @@ export default function App() {
         onSave={() => projectStore.save()}
         onExport={exportProject}
         onImport={() => importInputRef.current?.click()}
+        onUndo={() => projectStore.undo()}
+        onRedo={() => projectStore.redo()}
+        canUndo={projectStore.canUndo()}
+        canRedo={projectStore.canRedo()}
       />
       <input
         ref={importInputRef}

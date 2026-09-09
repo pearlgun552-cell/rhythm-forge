@@ -22,6 +22,10 @@ interface TransportBarProps {
   onSave: () => void;
   onExport: () => void;
   onImport: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
 }
 
 const KEYS = [
@@ -95,6 +99,8 @@ export function TransportBar(props: TransportBarProps) {
         </button>
         <button className="text-control project-file-button" onClick={props.onImport}>Import</button>
         <button className="text-control project-file-button" onClick={props.onExport}>Export</button>
+        <button className="text-control project-file-button" onClick={props.onUndo} disabled={!props.canUndo} title="Undo (⌘Z)">↶</button>
+        <button className="text-control project-file-button" onClick={props.onRedo} disabled={!props.canRedo} title="Redo (⇧⌘Z)">↷</button>
         <button className="save-button" onClick={props.onSave}>Save <span>{props.isDirty ? '•' : '✓'}</span></button>
       </div>
     </header>

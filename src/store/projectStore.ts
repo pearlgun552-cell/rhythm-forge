@@ -99,6 +99,8 @@ class ProjectStore {
   private state: ProjectState;
   private listeners = new Set<Listener>();
   private clipboard: Note[] = [];
+  private undoStack: Project[] = [];
+  private redoStack: Project[] = [];
 
   constructor() {
     const project = this.loadSavedProject() ?? createDefaultProject();
@@ -140,11 +142,37 @@ class ProjectStore {
 
   private updateProject(updater: (project: Project) => Project): void {
     const project = updater(this.state.project);
+    this.undoStack.push(structuredClone(this.state.project));
+    if (this.undoStack.length > 100) this.undoStack.shift();
+    this.redoStack = [];
     this.commit({
       ...this.state,
       project: { ...project, updatedAt: new Date().toISOString() },
       isDirty: true,
     });
+  }
+
+  canUndo(): boolean { return this.undoStack.length > 0; }
+  canRedo(): boolean { return this.redoStack.length > 0; }
+
+  undo(): void {
+    const previous = this.undoStack.pop();
+    if (!previous) return;
+    this.redoStack.push(structuredClone(this.state.project));
+    this.restoreProject(previous);
+  }
+
+  redo(): void {
+    const next = this.redoStack.pop();
+    if (!next) return;
+    this.undoStack.push(structuredClone(this.state.project));
+    this.restoreProject(next);
+  }
+
+  private restoreProject(project: Project): void {
+    const selectedTrackId = project.tracks.some((track) => track.id === this.state.selectedTrackId)
+      ? this.state.selectedTrackId : project.tracks[0]?.id ?? '';
+    this.commit({ ...this.state, project, selectedTrackId, selectedNoteId: null, selectedNoteIds: [], isDirty: true });
   }
 
   private selectedNotes(): Note[] {
@@ -211,12 +239,14 @@ class ProjectStore {
       tracks: [...this.state.project.tracks, track],
       updatedAt: new Date().toISOString(),
     };
+    this.undoStack.push(structuredClone(this.state.project)); this.redoStack = [];
     this.commit({ ...this.state, project, selectedTrackId: track.id, selectedNoteId: null, selectedNoteIds: [], isDirty: true });
   }
 
   addDrumTrack(): void {
     const track = createTrack(`Drums ${this.state.project.tracks.filter((item) => item.type === 'drum').length + 1}`, 'drum');
     const project = { ...this.state.project, tracks: [...this.state.project.tracks, track], updatedAt: new Date().toISOString() };
+    this.undoStack.push(structuredClone(this.state.project)); this.redoStack = [];
     this.commit({ ...this.state, project, selectedTrackId: track.id, selectedNoteId: null, selectedNoteIds: [], isDirty: true });
   }
 
@@ -249,6 +279,7 @@ class ProjectStore {
     const index = tracks.findIndex((track) => track.id === trackId);
     if (index < 0) return false;
     const nextTracks = tracks.filter((track) => track.id !== trackId);
+    this.undoStack.push(structuredClone(this.state.project)); this.redoStack = [];
     const selectedTrackId = this.state.selectedTrackId === trackId
       ? (nextTracks[Math.max(0, index - 1)]?.id ?? nextTracks[0]!.id)
       : this.state.selectedTrackId;
@@ -457,6 +488,7 @@ class ProjectStore {
     try {
       const project = normalizeProject(JSON.parse(raw) as Partial<Project>);
       if (!project) return false;
+      this.undoStack.push(structuredClone(this.state.project)); this.redoStack = [];
       this.commit({
         project: { ...project, updatedAt: new Date().toISOString() },
         selectedTrackId: project.tracks[0]?.id ?? '',
