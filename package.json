@@ -1,7 +1,7 @@
 {
   "name": "rhythm-forge-desktop",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "productName": "Rhythm Forge",
   "description": "A local-first desktop MVP for rhythm-game music creation.",
   "repository": {
