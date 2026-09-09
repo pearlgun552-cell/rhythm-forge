@@ -262,8 +262,7 @@ export const InstrumentPanel = memo(function InstrumentPanel({ track, synths, oc
             <b>♬</b><span>Grand Piano</span><small>Yamaha C5</small>
           </button>
 
-          {soundMenuOpen && (
-            <div className="sound-menu" role="listbox" aria-label={t('instrument.soundEngine')}>
+          <div className="sound-menu sound-menu-inline" role="listbox" aria-label={t('instrument.soundEngine')}>
               <button className="sound-menu-import" onClick={() => fileInputRef.current?.click()}>
                 <span aria-hidden="true">＋</span>{t('instrument.importSample')}
               </button>
@@ -312,8 +311,7 @@ export const InstrumentPanel = memo(function InstrumentPanel({ track, synths, oc
                   <span className="preset-type" aria-hidden="true">{importedSample ? 'custom' : 'builtin'}</span>
                 </button>
               </div>
-            </div>
-          )}
+          </div>
           <input ref={fileInputRef} type="file" accept="audio/*" hidden onChange={handleImportSample} />
         </div>
         </div>

@@ -143,6 +143,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .sound-picker-name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; font-weight: 650; }
 .sound-picker-caret { color: var(--violet); font-size: 10px; }
 .sound-menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 40; max-height: min(420px, 62vh); overflow-y: auto; padding: 6px; border: 1px solid var(--line-bright); border-radius: 9px; background: var(--surface-2); box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+.sound-menu-inline { position: static; max-height: none; margin-top: 7px; box-shadow: none; }
 .sound-menu-import { display: flex; align-items: center; gap: 8px; width: 100%; height: 34px; padding: 0 10px; border: 0; border-radius: 6px; color: var(--cyan); background: rgba(85,231,209,.07); font-size: 10px; }.sound-menu-import:hover { background: rgba(85,231,209,.14); }.sound-menu-import span { font-size: 12px; }
 .sound-menu-reset { color: #9ba7ba; background: transparent; }
 .sound-menu-group-label { margin: 9px 8px 4px; color: #657187; font-size: 8px; letter-spacing: .15em; }
