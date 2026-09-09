@@ -1,4 +1,5 @@
 import type { Instrument } from '../types/music';
+import { sampleStore } from '../store/sampleStore';
 import type { VoiceOptions } from './PolySynth';
 
 interface PianoVoice {
@@ -12,21 +13,10 @@ interface PianoSample {
   pitch: number;
 }
 
-const PIANO_SAMPLES: PianoSample[] = [
-  { file: 'C1.mp3', pitch: 24 },
-  { file: 'Fs1.mp3', pitch: 30 },
-  { file: 'C2.mp3', pitch: 36 },
-  { file: 'Fs2.mp3', pitch: 42 },
-  { file: 'C3.mp3', pitch: 48 },
-  { file: 'Fs3.mp3', pitch: 54 },
-  { file: 'C4.mp3', pitch: 60 },
-  { file: 'Fs4.mp3', pitch: 66 },
-  { file: 'C5.mp3', pitch: 72 },
-  { file: 'Fs5.mp3', pitch: 78 },
-  { file: 'C6.mp3', pitch: 84 },
-  { file: 'Fs6.mp3', pitch: 90 },
-  { file: 'C7.mp3', pitch: 96 },
-];
+// A single recorded sample is used for the whole instrument. Every other
+// pitch in the scale is generated at runtime by resampling this buffer via
+// AudioBufferSourceNode.playbackRate (factor = 2 ^ ((pitch - root) / 12)).
+const BASE_PIANO_SAMPLE: PianoSample = { file: 'C4.mp3', pitch: 60 };
 
 function loadArrayBuffer(url: string): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) => {
@@ -46,7 +36,7 @@ function loadArrayBuffer(url: string): Promise<ArrayBuffer> {
 }
 
 export class SampledPiano {
-  private readonly buffers = new Map<number, AudioBuffer>();
+  private buffer: AudioBuffer | null = null;
   private readonly liveVoices = new Map<string, PianoVoice>();
   private readonly scheduledVoices = new Set<PianoVoice>();
   private loadPromise: Promise<void> | null = null;
@@ -54,18 +44,31 @@ export class SampledPiano {
   constructor(private readonly context: AudioContext, private readonly destination: AudioNode) {}
 
   load(): Promise<void> {
-    if (this.buffers.size === PIANO_SAMPLES.length) return Promise.resolve();
+    if (this.buffer) return Promise.resolve();
     if (!this.loadPromise) {
-      this.loadPromise = Promise.all(PIANO_SAMPLES.map(async ({ file, pitch }) => {
-        const url = new URL(`samples/piano/${file}`, document.baseURI).href;
-        const data = await loadArrayBuffer(url);
-        this.buffers.set(pitch, await this.context.decodeAudioData(data.slice(0)));
-      })).then(() => undefined).catch((error: unknown) => {
+      this.loadPromise = (async () => {
+        const imported = sampleStore.getImported();
+        if (imported) {
+          this.buffer = await this.context.decodeAudioData(imported.data.slice(0));
+        } else {
+          const { file } = BASE_PIANO_SAMPLE;
+          const url = new URL(`samples/piano/${file}`, document.baseURI).href;
+          const data = await loadArrayBuffer(url);
+          this.buffer = await this.context.decodeAudioData(data.slice(0));
+        }
+      })().catch((error: unknown) => {
         this.loadPromise = null;
         throw error;
       });
     }
     return this.loadPromise;
+  }
+
+  // Clears the decoded source so the next load() picks up the current sample
+  // store value (e.g. after the user imports or removes a sample).
+  reset(): void {
+    this.buffer = null;
+    this.loadPromise = null;
   }
 
   noteOn(voiceId: string, pitch: number, instrument: Instrument, options: VoiceOptions = {}): void {
@@ -126,8 +129,8 @@ export class SampledPiano {
   }
 
   private createVoice(pitch: number, instrument: Instrument, options: VoiceOptions): PianoVoice | null {
-    const rootPitch = this.nearestSamplePitch(pitch);
-    const buffer = this.buffers.get(rootPitch);
+    const rootPitch = BASE_PIANO_SAMPLE.pitch;
+    const buffer = this.buffer;
     if (!buffer) return null;
     const source = this.context.createBufferSource();
     const gain = this.context.createGain();
@@ -139,12 +142,6 @@ export class SampledPiano {
     gain.connect(panner);
     panner.connect(this.destination);
     return { source, gain, panner };
-  }
-
-  private nearestSamplePitch(pitch: number): number {
-    return PIANO_SAMPLES.reduce((nearest, sample) => (
-      Math.abs(sample.pitch - pitch) < Math.abs(nearest - pitch) ? sample.pitch : nearest
-    ), 24);
   }
 
   private peakLevel(instrument: Instrument, options: VoiceOptions): number {

@@ -24,6 +24,7 @@
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
+    "@breezystack/lamejs": "^1.2.7",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },

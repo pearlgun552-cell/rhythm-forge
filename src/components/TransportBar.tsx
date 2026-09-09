@@ -1,5 +1,6 @@
 import type { Project } from '../types/music';
 import type { TransportStatus } from '../sequencer/Sequencer';
+import { useLanguage } from '../i18n';
 
 interface TransportBarProps {
   project: Project;
@@ -22,6 +23,7 @@ interface TransportBarProps {
 const KEYS = ['C major', 'C minor', 'D minor', 'E minor', 'F minor', 'G minor', 'A minor', 'B minor'];
 
 export function TransportBar(props: TransportBarProps) {
+  const { t } = useLanguage();
   const beat = Math.floor(props.positionBeats);
   const barNumber = Math.floor(beat / 4) + 1;
   const beatNumber = (beat % 4) + 1;
@@ -34,23 +36,23 @@ export function TransportBar(props: TransportBarProps) {
           <span className="app-name">RHYTHM FORGE</span>
           <input
             className="project-name-input"
-            aria-label="Project Name"
+            aria-label={t('transport.projectName')}
             value={props.project.name}
             onChange={(event) => props.onNameChange(event.target.value)}
           />
         </div>
       </div>
 
-      <div className="transport-controls" aria-label="Transport">
-        <button className={props.status === 'playing' ? 'icon-control active' : 'icon-control'} onClick={props.onPlay} aria-label="Play">▶</button>
-        <button className={props.status === 'paused' ? 'icon-control active' : 'icon-control'} onClick={props.onPause} aria-label="Pause">Ⅱ</button>
-        <button className="icon-control" onClick={props.onStop} aria-label="Stop">■</button>
+      <div className="transport-controls" aria-label={t('transport.transport')}>
+        <button className={props.status === 'playing' ? 'icon-control active' : 'icon-control'} onClick={props.onPlay} aria-label={t('transport.play')}>▶</button>
+        <button className={props.status === 'paused' ? 'icon-control active' : 'icon-control'} onClick={props.onPause} aria-label={t('transport.pause')}>Ⅱ</button>
+        <button className="icon-control" onClick={props.onStop} aria-label={t('transport.stop')}>■</button>
         <button
           className={props.isRecording ? 'icon-control record-control active' : 'icon-control record-control'}
           onClick={props.onRecord}
-          aria-label={props.isRecording ? 'Stop Recording' : 'Record'}
+          aria-label={props.isRecording ? t('transport.stopRecording') : t('transport.record')}
           aria-pressed={props.isRecording}
-          title="Record computer keyboard (R)"
+          title={t('transport.recordTooltip')}
         >
           ●
         </button>
@@ -58,7 +60,7 @@ export function TransportBar(props: TransportBarProps) {
       </div>
 
       <div className="transport-settings">
-        <label className="compact-field">BPM
+        <label className="compact-field">{t('transport.bpm')}
           <input
             aria-label="BPM"
             type="number"
@@ -68,15 +70,15 @@ export function TransportBar(props: TransportBarProps) {
             onChange={(event) => props.onBpmChange(Number(event.target.value) || 174)}
           />
         </label>
-        <label className="compact-field">KEY
-          <select aria-label="Key" value={props.project.key} onChange={(event) => props.onKeyChange(event.target.value)}>
+        <label className="compact-field">{t('transport.key')}
+          <select aria-label={t('transport.keyAria')} value={props.project.key} onChange={(event) => props.onKeyChange(event.target.value)}>
             {KEYS.map((key) => <option key={key}>{key}</option>)}
           </select>
         </label>
         <button className={props.metronome ? 'text-control active' : 'text-control'} onClick={() => props.onMetronomeChange(!props.metronome)} aria-pressed={props.metronome}>
-          <span aria-hidden="true">◉</span> Metronome
+          <span aria-hidden="true">◉</span> {t('transport.metronome')}
         </button>
-        <button className="save-button" onClick={props.onSave}>Save <span>{props.isDirty ? '•' : '✓'}</span></button>
+        <button className="save-button" onClick={props.onSave}>{t('transport.save')} <span>{props.isDirty ? '•' : '✓'}</span></button>
       </div>
     </header>
   );

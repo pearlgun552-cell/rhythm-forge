@@ -2,7 +2,7 @@
 
 [![Windows Build](https://github.com/pearlgun552-cell/rhythm-forge/actions/workflows/windows-build.yml/badge.svg)](https://github.com/pearlgun552-cell/rhythm-forge/actions/workflows/windows-build.yml)
 
-面向音游曲创作的本地桌面音乐制作软件骨架。当前版本覆盖项目数据、基础复音合成器、采样钢琴、电脑键盘演奏与录入、Piano Roll、音频时钟调度和多音轨编辑。
+面向音游曲创作的本地桌面音乐制作软件骨架。当前版本覆盖项目数据、基础复音合成器、采样钢琴、电脑键盘演奏与录入、Piano Roll、音频时钟调度、多音轨编辑、自定义采样导入、原生中文菜单、界面语言切换（简体中文 / English）与项目导出（保存项目、导出为 MP3）。
 
 ## 技术栈
 
@@ -10,7 +10,7 @@
 - React + TypeScript：界面与类型系统
 - Vite：开发与构建
 - Web Audio API：PolySynth、ADSR 和音频调度
-- Salamander Grand Piano：本地多采样 Yamaha C5 钢琴音色（CC BY 3.0）
+- Salamander Grand Piano：单个基准采样的 Yamaha C5 钢琴音色，其余音阶由软件通过 `playbackRate` 实时变调生成（CC BY 3.0）
 - `localStorage`：本地项目保存
 
 没有使用 Tone.js；当前音频需求很小，直接基于 Web Audio API 能减少依赖，并让调度与 Hanging Notes 处理更明确。
@@ -76,9 +76,14 @@ npm run package:mac
 - `R` 或顶部红色 `●`：开始 / 结束电脑键盘录音；录音会自动播放 Transport，并把按键时值按 1/16 拍写入当前音轨
 - `Z / X`：降低 / 升高八度
 - `Space`：播放 / 暂停
-- 右侧 `Sound Engine`：每条音轨可在 Poly Synth 与 Grand Piano 之间切换
+- 右侧 `音色` 下拉菜单：列出合成器库（默认含 `我的合成器`，`＋ 新增合成器` 可新增并命名）与采样钢琴；**右键合成器可重命名**；每个合成器的音色参数独立保存，点击即应用并在下方编辑
+- 合成器面板：振荡器预设（正弦 / 方波 / 锯齿 / 三角波）选择时会同步对应默认包络；手动改动包络或直接点击 `自定义` 即切换为自定义振荡器，且**从自定义切到预设再切回自定义会还原原自定义参数**（音色下拉菜单中该合成器右侧也会随之显示 `自定义`）；包络各参数支持滑块或直接输入数值
+- 顶部菜单 `视图 → 语言`：切换简体中文 / English 界面语言（顶部菜单整体为中文）
+- 顶部菜单 `文件 → 保存项目`：把当前项目下载为 JSON 项目文件；`文件 → 导出为 MP3`：把当前编排离线渲染并导出为 MP3 音频
+- 音色菜单顶部 `导入采样`：用本地音频替换内置基准采样；`恢复内置采样` 可回到系统自带音色
 - 点击 Piano Roll 网格：按 1/16 拍创建音符
 - 点击音符后按 `Delete` 或 `Backspace`：删除音符
+- 中间编曲区采用标签开关：顶部 `编排` / `钢琴卷帘` 各自独立，点击切换显示/隐藏；两个都开则**上下排版**（拖动中间的**横向分隔条**调整占比），两个都关则中间显示灰色背景与底部“Rhythm Forge”小字
 - 左侧 `+ Add Instrument Track`：添加独立音轨
 - 直接编辑音轨名称输入框：重命名
 
@@ -90,6 +95,7 @@ src/audio/            AudioEngine 与 PolySynth
 src/sequencer/        AudioContext 时钟调度与 Transport 状态
 src/piano-roll/       Piano Roll 编辑视图
 src/instruments/      电脑键盘映射与演奏逻辑
+src/i18n/             界面语言切换与中文/英文语言包
 src/project/          默认项目与工厂函数
 src/store/            统一 Project Store
 src/components/       Transport、Track、Arrangement、Instrument UI

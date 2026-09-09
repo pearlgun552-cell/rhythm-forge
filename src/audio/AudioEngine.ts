@@ -30,6 +30,14 @@ export class AudioEngine {
     }
   }
 
+  // Re-decodes the sampled piano using the current sample source. Used after
+  // the user imports or removes a sample so live playback picks it up.
+  async reloadPiano(): Promise<void> {
+    this.ensureContext();
+    this.piano?.reset();
+    await this.piano?.load();
+  }
+
   noteOn(voiceId: string, pitch: number, instrument: Instrument, options?: VoiceOptions): void {
     this.ensureContext();
     if (instrument.type === 'sampled-piano') this.piano?.noteOn(voiceId, pitch, instrument, options);

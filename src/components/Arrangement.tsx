@@ -1,4 +1,5 @@
 import type { Track } from '../types/music';
+import { useLanguage } from '../i18n';
 import { LOOP_BARS, LOOP_BEATS } from '../utils/musicConstants';
 
 interface ArrangementProps {
@@ -8,9 +9,10 @@ interface ArrangementProps {
 }
 
 export function Arrangement({ tracks, selectedTrackId, positionBeats }: ArrangementProps) {
+  const { t } = useLanguage();
   return (
     <section className="arrangement panel">
-      <div className="arrangement-title"><span>ARRANGEMENT</span><strong>{LOOP_BARS} BAR LOOP</strong></div>
+      <div className="arrangement-title"><span>{t('arrangement.title')}</span><strong>{LOOP_BARS} {t('arrangement.barLoop')}</strong></div>
       <div className="arrangement-ruler" style={{ gridTemplateColumns: `repeat(${LOOP_BARS}, 1fr)` }}>
         {Array.from({ length: LOOP_BARS }, (_, bar) => <i key={bar}>{bar + 1}</i>)}
       </div>

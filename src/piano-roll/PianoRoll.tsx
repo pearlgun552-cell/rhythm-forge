@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { audioEngine } from '../audio/AudioEngine';
 import { isBlackKey, noteName } from '../instruments/keyboardMap';
+import { useLanguage } from '../i18n';
 import { projectStore } from '../store/projectStore';
 import type { Track } from '../types/music';
 import { createId } from '../utils/id';
@@ -21,6 +22,7 @@ interface PianoRollProps {
 }
 
 export function PianoRoll({ track, selectedNoteId, activePitches, positionBeats }: PianoRollProps) {
+  const { t } = useLanguage();
   const gridRef = useRef<HTMLDivElement>(null);
 
   const createNote = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -50,8 +52,8 @@ export function PianoRoll({ track, selectedNoteId, activePitches, positionBeats 
   return (
     <section className="piano-roll panel">
       <div className="piano-roll-toolbar">
-        <div><span>PIANO ROLL</span><h2>{track?.name ?? 'No Track'}</h2></div>
-        <div className="roll-legend"><span><i className="legend-note" /> Click to create</span><span>Delete removes selected</span><b>1/16 GRID · 16 BARS</b></div>
+        <div><span>{t('pianoRoll.heading')}</span><h2>{track?.name ?? t('pianoRoll.noTrack')}</h2></div>
+        <div className="roll-legend"><span><i className="legend-note" /> {t('pianoRoll.clickCreate')}</span><span>{t('pianoRoll.deleteSelected')}</span><b>{t('pianoRoll.grid')}</b></div>
       </div>
       <div className="roll-scroll">
         <div className="piano-column">
@@ -87,7 +89,7 @@ export function PianoRoll({ track, selectedNoteId, activePitches, positionBeats 
                   event.stopPropagation();
                   projectStore.selectNote(note.id);
                 }}
-                aria-label={`${noteName(note.pitch)} at beat ${note.start + 1}`}
+                aria-label={`${noteName(note.pitch)} ${t('pianoRoll.noteAtBeat')} ${note.start + 1}`}
               >
                 {noteName(note.pitch)}
               </button>

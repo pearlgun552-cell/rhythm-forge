@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Arrangement } from './components/Arrangement';
+import { EditorTabs } from './components/EditorTabs';
 import { InstrumentPanel } from './components/InstrumentPanel';
 import { TrackList } from './components/TrackList';
 import { TransportBar } from './components/TransportBar';
 import { useComputerKeyboard } from './instruments/useComputerKeyboard';
-import { PianoRoll } from './piano-roll/PianoRoll';
 import { sequencer } from './sequencer/transport';
 import { useTransport } from './sequencer/useTransport';
+import { languageStore, useLanguage } from './i18n';
 import { projectStore, useProjectStore } from './store/projectStore';
+import { exportProjectAsMp3, saveProjectFile } from './utils/projectFiles';
 
 function isEditingText(): boolean {
   const element = document.activeElement;
@@ -17,6 +18,7 @@ function isEditingText(): boolean {
 export default function App() {
   const { project, selectedTrackId, selectedNoteId, isDirty } = useProjectStore();
   const transport = useTransport();
+  const { t } = useLanguage();
   const [metronome, setMetronome] = useState(false);
   const [octave, setOctave] = useState(4);
   const [isRecording, setIsRecording] = useState(false);
@@ -74,6 +76,22 @@ export default function App() {
     sequencer.stop();
   }, [finishRecording]);
 
+  useEffect(() => {
+    const bridge = window.rhythmForge;
+    if (!bridge) return;
+    const offLanguage = bridge.onLanguageChange((language) => languageStore.setLanguage(language));
+    const offSave = bridge.onSaveProject(() => saveProjectFile(projectStore.getSnapshot().project));
+    const offExport = bridge.onExportMp3(() => { void exportProjectAsMp3(projectStore.getSnapshot().project); });
+    // Tell the main process the persisted language so the View menu radio
+    // reflects the current selection on startup.
+    bridge.setLanguage(languageStore.getLanguage());
+    return () => {
+      offLanguage();
+      offSave();
+      offExport();
+    };
+  }, []);
+
   const toggleMetronome = (enabled: boolean) => {
     setMetronome(enabled);
     sequencer.setMetronome(enabled);
@@ -105,27 +123,27 @@ export default function App() {
       />
       <main className="studio-layout">
         <TrackList tracks={project.tracks} selectedTrackId={selectedTrackId} />
-        <div className="editor-column">
-          <Arrangement tracks={project.tracks} selectedTrackId={selectedTrackId} positionBeats={transport.positionBeats} />
-          <PianoRoll
-            track={selectedTrack}
-            selectedNoteId={selectedNoteId}
-            activePitches={activePitches}
-            positionBeats={transport.positionBeats}
-          />
-        </div>
+        <EditorTabs
+          tracks={project.tracks}
+          selectedTrack={selectedTrack}
+          selectedTrackId={selectedTrackId}
+          selectedNoteId={selectedNoteId}
+          activePitches={activePitches}
+          positionBeats={transport.positionBeats}
+        />
         <InstrumentPanel
           track={selectedTrack}
+          synths={project.synths}
           octave={octave}
           activePitches={activePitches}
           onOctaveChange={changeOctave}
         />
       </main>
       <footer className="status-bar">
-        <span className={isRecording ? 'recording-status active' : 'recording-status'}><i /> {isRecording ? 'RECORDING' : 'AUDIO CLOCK'}</span>
-        <span>{project.tracks.length} TRACK{project.tracks.length === 1 ? '' : 'S'}</span>
-        <span>LOCAL FIRST</span>
-        <span className="status-tip">R / ● records keyboard to selected track · A–K play · Z/X octave</span>
+        <span className={isRecording ? 'recording-status active' : 'recording-status'}><i /> {isRecording ? t('app.recording') : t('app.audioClock')}</span>
+        <span>{project.tracks.length} {project.tracks.length === 1 ? t('app.track') : t('app.tracks')}</span>
+        <span>{t('app.localFirst')}</span>
+        <span className="status-tip">{t('app.statusTip')}</span>
       </footer>
     </div>
   );

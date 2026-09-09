@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
-import { createDefaultProject, createTrack } from '../project/defaultProject';
-import type { Instrument, Note, Project, Track } from '../types/music';
+import { createDefaultProject, createSynth, createTrack } from '../project/defaultProject';
+import type { Instrument, Note, Project, SynthPreset, Track } from '../types/music';
 
 interface ProjectState {
   project: Project;
@@ -44,6 +44,9 @@ class ProjectStore {
       if (!raw) return null;
       const project = JSON.parse(raw) as Project;
       if (!project.id || !project.name || !Array.isArray(project.tracks) || project.tracks.length === 0) return null;
+      if (!Array.isArray(project.synths) || project.synths.length === 0) {
+        project.synths = [createSynth('我的合成器')];
+      }
       return project;
     } catch {
       return null;
@@ -78,6 +81,17 @@ class ProjectStore {
 
   addTrack(): void {
     const track = createTrack(`Lead ${this.state.project.tracks.length + 1}`);
+    const firstSynth = this.state.project.synths[0];
+    if (firstSynth) {
+      track.instrument = {
+        ...track.instrument,
+        type: 'poly-synth',
+        presetId: firstSynth.id,
+        oscillator: firstSynth.oscillator,
+        adsr: firstSynth.adsr,
+        volume: firstSynth.volume,
+      };
+    }
     const project = {
       ...this.state.project,
       tracks: [...this.state.project.tracks, track],
@@ -99,6 +113,31 @@ class ProjectStore {
       tracks: project.tracks.map((track) => track.id === trackId
         ? { ...track, instrument: { ...track.instrument, ...changes } }
         : track),
+    }));
+  }
+
+  addSynth(name: string): SynthPreset {
+    const synth = createSynth(name);
+    this.updateProject((project) => ({ ...project, synths: [...project.synths, synth] }));
+    return synth;
+  }
+
+  updateSynth(synthId: string, changes: Partial<Omit<SynthPreset, 'id'>>): void {
+    this.updateProject((project) => ({
+      ...project,
+      synths: project.synths.map((synth) => (synth.id === synthId ? { ...synth, ...changes } : synth)),
+    }));
+  }
+
+  // Edits a synth patch and every track currently using it, so the saved patch
+  // and its live instruments stay in sync.
+  updateSynthParamsForTracks(synthId: string, changes: Partial<Omit<SynthPreset, 'id'>>): void {
+    this.updateProject((project) => ({
+      ...project,
+      synths: project.synths.map((synth) => (synth.id === synthId ? { ...synth, ...changes } : synth)),
+      tracks: project.tracks.map((track) => (track.instrument.presetId === synthId
+        ? { ...track, instrument: { ...track.instrument, ...changes } }
+        : track)),
     }));
   }
 
