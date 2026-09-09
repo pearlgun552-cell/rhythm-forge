@@ -19,6 +19,8 @@ interface TransportBarProps {
   onRecord: () => void;
   onMetronomeChange: (enabled: boolean) => void;
   onSave: () => void;
+  onExport: () => void;
+  onImport: () => void;
 }
 
 const KEYS = [
@@ -89,6 +91,8 @@ export function TransportBar(props: TransportBarProps) {
         <button className={props.metronome ? 'text-control active' : 'text-control'} onClick={() => props.onMetronomeChange(!props.metronome)} aria-pressed={props.metronome}>
           <span aria-hidden="true">◉</span> Metronome
         </button>
+        <button className="text-control project-file-button" onClick={props.onImport}>Import</button>
+        <button className="text-control project-file-button" onClick={props.onExport}>Export</button>
         <button className="save-button" onClick={props.onSave}>Save <span>{props.isDirty ? '•' : '✓'}</span></button>
       </div>
     </header>

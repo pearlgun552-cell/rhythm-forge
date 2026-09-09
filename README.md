@@ -85,6 +85,7 @@ npm run package:mac
 - 顶部 `LENGTH`：选择 32 / 64 / 128 小节（内部使用 projectLengthBeats）
 - Drum Track 使用 16-Step Sequencer；右侧可调整 Track Volume、Pan、Mute、Solo 和 Master Reverb
 - 直接编辑音轨名称输入框：重命名
+- `Import` / `Export`：以 JSON 文件交换完整项目；`Ctrl/Cmd + S` 快速保存到本地。
 
 ## 目录
 
@@ -109,7 +110,7 @@ src/utils/musicTheory.ts  调性与 Scale Guide
 
 ## 当前边界
 
-当前是 32–128 小节长度选择的 MVP；Piano Roll 已支持移动、缩放、多选、复制粘贴与 Grid Snap，Arrangement 支持 Sections，鼓组使用基础 16-Step Sequencer。尚无音频轨、麦克风录音、WAV/MP3 导出、VST、AI 或云功能。
+当前是 32–128 小节长度选择的 MVP；Piano Roll 已支持移动、缩放、多选、复制粘贴与 Grid Snap，Arrangement 支持 Sections，鼓组使用基础 16-Step Sequencer。项目可通过 JSON 导入导出；尚无音频轨、麦克风录音、WAV/MP3 导出、VST、AI 或云功能。
 
 钢琴采样署名和许可证见 `public/samples/piano/LICENSE.md`。
 

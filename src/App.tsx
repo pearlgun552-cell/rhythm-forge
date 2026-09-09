@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Arrangement } from './components/Arrangement';
 import { InstrumentPanel } from './components/InstrumentPanel';
 import { TrackList } from './components/TrackList';
@@ -21,6 +21,7 @@ export default function App() {
   const [metronome, setMetronome] = useState(false);
   const [octave, setOctave] = useState(4);
   const [isRecording, setIsRecording] = useState(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
   const selectedTrack = useMemo(
     () => project.tracks.find((track) => track.id === selectedTrackId),
     [project.tracks, selectedTrackId],
@@ -68,6 +69,10 @@ export default function App() {
         event.preventDefault();
         projectStore.duplicateSelectedNotes();
       }
+      if ((event.metaKey || event.ctrlKey) && event.code === 'KeyS' && !isEditingText()) {
+        event.preventDefault();
+        projectStore.save();
+      }
       if (event.code === 'Space' && !isEditingText()) {
         event.preventDefault();
         if (transport.status === 'playing') pauseTransport();
@@ -108,6 +113,26 @@ export default function App() {
     projectStore.deleteTrack(trackId);
   }, [transport.status]);
 
+  const exportProject = useCallback(() => {
+    const blob = new Blob([projectStore.exportJson()], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${project.name.replace(/[^a-z0-9-_]+/gi, '-').replace(/^-|-$/g, '') || 'rhythm-project'}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }, [project.name]);
+
+  const importProject = useCallback(async (file: File) => {
+    if (isDirty && !window.confirm('Replace the current unsaved project with this file?')) {
+      if (importInputRef.current) importInputRef.current.value = '';
+      return;
+    }
+    const imported = projectStore.importJson(await file.text());
+    if (!imported) window.alert('This project file is invalid or unsupported.');
+    if (importInputRef.current) importInputRef.current.value = '';
+  }, [isDirty]);
+
   return (
     <div className="app-shell">
       <TransportBar
@@ -127,6 +152,19 @@ export default function App() {
         onRecord={toggleRecording}
         onMetronomeChange={toggleMetronome}
         onSave={() => projectStore.save()}
+        onExport={exportProject}
+        onImport={() => importInputRef.current?.click()}
+      />
+      <input
+        ref={importInputRef}
+        className="project-import-input"
+        type="file"
+        accept="application/json,.json"
+        aria-label="Import Project JSON"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) void importProject(file);
+        }}
       />
       <main className="studio-layout">
         <TrackList

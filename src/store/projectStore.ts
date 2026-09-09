@@ -412,6 +412,27 @@ class ProjectStore {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(this.state.project));
     this.commit({ ...this.state, isDirty: false });
   }
+
+  exportJson(): string {
+    return JSON.stringify(this.state.project, null, 2);
+  }
+
+  importJson(raw: string): boolean {
+    try {
+      const project = normalizeProject(JSON.parse(raw) as Partial<Project>);
+      if (!project) return false;
+      this.commit({
+        project: { ...project, updatedAt: new Date().toISOString() },
+        selectedTrackId: project.tracks[0]?.id ?? '',
+        selectedNoteId: null,
+        selectedNoteIds: [],
+        isDirty: true,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }
 
 export const projectStore = new ProjectStore();
