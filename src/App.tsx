@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Arrangement } from './components/Arrangement';
+import { EditorTabs } from './components/EditorTabs';
 import { InstrumentPanel } from './components/InstrumentPanel';
 import { TrackList } from './components/TrackList';
 import { TransportBar } from './components/TransportBar';
 import { useComputerKeyboard } from './instruments/useComputerKeyboard';
-import { PianoRoll } from './piano-roll/PianoRoll';
 import { audioEngine } from './audio/AudioEngine';
 import { sequencer } from './sequencer/transport';
 import { useTransport } from './sequencer/useTransport';
@@ -191,15 +190,16 @@ export default function App() {
           selectedTrackId={selectedTrackId}
           onDeleteTrack={deleteTrack}
         />
-        <div className="editor-column">
-          <Arrangement project={project} tracks={project.tracks} selectedTrackId={selectedTrackId} />
-          <PianoRoll
-            track={selectedTrack}
-            selectedNoteId={selectedNoteId}
-            selectedNoteIds={selectedNoteIds}
-            activePitches={activePitches}
-          />
-        </div>
+        <EditorTabs
+          project={project}
+          tracks={project.tracks}
+          selectedTrack={selectedTrack}
+          selectedTrackId={selectedTrackId}
+          selectedNoteId={selectedNoteId}
+          selectedNoteIds={selectedNoteIds}
+          activePitches={activePitches}
+          positionBeats={transport.positionBeats}
+        />
         <InstrumentPanel
           track={selectedTrack}
           synths={project.synths}
@@ -207,6 +207,7 @@ export default function App() {
           octave={octave}
           activePitches={activePitches}
           onOctaveChange={changeOctave}
+          onExportMp3={() => { void exportProjectAsMp3(projectStore.getSnapshot().project); }}
         />
       </main>
       <footer className="status-bar">

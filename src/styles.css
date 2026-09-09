@@ -187,3 +187,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 
 .editor-empty { flex: 1 1 auto; display: flex; align-items: flex-end; justify-content: center; background: #151a22; }
 .editor-empty-name { color: #5c667a; font-size: 12px; letter-spacing: .12em; margin-bottom: 24px; user-select: none; }
+.quick-actions { padding-bottom: 14px; }
+.quick-action-row { display: flex; gap: 7px; margin-top: 10px; }
+.quick-action-row button { flex: 1; height: 30px; border: 1px solid var(--line); border-radius: 6px; color: #aab6c7; background: var(--surface-2); font-size: 9px; }
+.quick-action-row button:first-child { color: #d7d0ff; border-color: rgba(158,134,255,.4); background: rgba(158,134,255,.08); }
+.quick-action-row button:hover { border-color: var(--cyan); color: #dce5ef; }

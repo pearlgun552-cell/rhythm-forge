@@ -14,6 +14,7 @@ interface InstrumentPanelProps {
   activePitches: Set<number>;
   onOctaveChange: (octave: number) => void;
   project: Project;
+  onExportMp3: () => void;
 }
 
 const WAVEFORMS: OscillatorWaveform[] = ['sine', 'square', 'sawtooth', 'triangle'];
@@ -47,13 +48,13 @@ function isCustomOscillatorState(instrument: { oscillator: OscillatorWaveform; a
   return instrument.oscCustom === true || !envelopeEquals(instrument.adsr, OSCILLATOR_ENVELOPES[instrument.oscillator]);
 }
 
-export const InstrumentPanel = memo(function InstrumentPanel({ track, synths, octave, activePitches, onOctaveChange, project }: InstrumentPanelProps) {
+export const InstrumentPanel = memo(function InstrumentPanel({ track, synths, octave, activePitches, onOctaveChange, project, onExportMp3 }: InstrumentPanelProps) {
   const [pianoLoadState, setPianoLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [soundMenuOpen, setSoundMenuOpen] = useState(false);
   const [dialog, setDialog] = useState<{ mode: 'new' } | { mode: 'rename'; synth: SynthPreset } | null>(null);
   const [dialogName, setDialogName] = useState('');
   const importedSample = useImportedSample();
-  const { t } = useLanguage();
+  const { language, setLanguage, t } = useLanguage();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const soundMenuRef = useRef<HTMLDivElement>(null);
 
@@ -247,6 +248,12 @@ export const InstrumentPanel = memo(function InstrumentPanel({ track, synths, oc
 
       {track.type === 'instrument' && <section className="instrument-section">
         <label className="control-label">SOUND ENGINE</label>
+        <div className="sound-picker" ref={soundMenuRef}>
+          <button className="sound-picker-trigger" type="button" onClick={() => setSoundMenuOpen((open) => !open)} aria-expanded={soundMenuOpen}>
+            <span className="sound-picker-icon" aria-hidden="true">{isSynth ? '⌁' : '♬'}</span>
+            <span className="sound-picker-name">{currentSoundName}</span>
+            <span className="sound-picker-caret" aria-hidden="true">{soundMenuOpen ? '▴' : '▾'}</span>
+          </button>
         <div className="instrument-type-grid">
           <button className={instrument.type === 'poly-synth' ? 'selected' : ''} onClick={() => selectInstrument('poly-synth')}>
             <b>⌁</b><span>Poly Synth</span><small>Electronic</small>
@@ -308,6 +315,7 @@ export const InstrumentPanel = memo(function InstrumentPanel({ track, synths, oc
             </div>
           )}
           <input ref={fileInputRef} type="file" accept="audio/*" hidden onChange={handleImportSample} />
+        </div>
         </div>
       </section>}
 
@@ -428,6 +436,14 @@ export const InstrumentPanel = memo(function InstrumentPanel({ track, synths, oc
         <div className="keyboard-header"><label className="control-label">MASTER REVERB</label><button className={project.reverb.enabled ? 'mix-toggle active' : 'mix-toggle'} onClick={() => projectStore.setReverb({ enabled: !project.reverb.enabled })} aria-pressed={project.reverb.enabled}>{project.reverb.enabled ? 'ON' : 'OFF'}</button></div>
         <label className="range-field mixer-field"><span>MIX</span><input aria-label="Reverb mix" type="range" min="0" max="1" step="0.01" value={project.reverb.mix} onChange={(event) => projectStore.setReverb({ mix: Number(event.target.value) })} /><b>{Math.round(project.reverb.mix * 100)}%</b></label>
         <label className="range-field mixer-field"><span>DEC</span><input aria-label="Reverb decay" type="range" min="0.1" max="8" step="0.1" value={project.reverb.decay} onChange={(event) => projectStore.setReverb({ decay: Number(event.target.value) })} /><b>{project.reverb.decay.toFixed(1)}s</b></label>
+      </section>
+
+      <section className="instrument-section quick-actions">
+        <label className="control-label">PROJECT TOOLS</label>
+        <div className="quick-action-row">
+          <button type="button" onClick={onExportMp3}>Export MP3</button>
+          <button type="button" onClick={() => setLanguage(language === 'zh' ? 'en' : 'zh')}>{language === 'zh' ? 'English' : '中文'}</button>
+        </div>
       </section>
 
       {dialog && (
