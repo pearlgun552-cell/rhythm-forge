@@ -56,6 +56,12 @@ export class AudioEngine {
     }
   }
 
+  async reloadPiano(): Promise<void> {
+    this.ensureContext();
+    this.piano?.reset();
+    await this.piano?.load();
+  }
+
   noteOn(voiceId: string, pitch: number, instrument: Instrument, options: VoiceOptions = {}): void {
     this.ensureContext();
     const output = options.output ?? this.getTrackOutput(options.trackId);

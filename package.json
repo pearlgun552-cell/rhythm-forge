@@ -1,7 +1,7 @@
 {
   "name": "rhythm-forge-desktop",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "productName": "Rhythm Forge",
   "description": "A local-first desktop MVP for rhythm-game music creation.",
   "repository": {
@@ -24,6 +24,7 @@
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
+    "@breezystack/lamejs": "^1.2.7",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },

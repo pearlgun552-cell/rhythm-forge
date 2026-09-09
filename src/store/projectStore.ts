@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
-import { applyPreset, createDefaultProject, createDrumPattern, createTrack } from '../project/defaultProject';
-import type { DrumPattern, DrumSound, Instrument, Note, Project, Section, Track } from '../types/music';
+import { applyPreset, createDefaultProject, createDrumPattern, createSynth, createTrack } from '../project/defaultProject';
+import type { DrumPattern, DrumSound, Instrument, Note, Project, Section, SynthPreset, Track } from '../types/music';
 import { DEFAULT_PROJECT_LENGTH_BEATS, DEFAULT_TIME_SIGNATURE, snapBeat } from '../utils/musicConstants';
 
 export interface ProjectState {
@@ -59,10 +59,18 @@ function normalizeProject(raw: Partial<Project>): Project | null {
     } as Track;
   });
   const projectLengthBeats = clamp(Number(raw.projectLengthBeats ?? DEFAULT_PROJECT_LENGTH_BEATS), 128, 512);
+  const synths = Array.isArray(raw.synths) && raw.synths.length > 0
+    ? raw.synths.map((rawSynth) => ({
+      ...createSynth('My Synth'),
+      ...(rawSynth as Partial<SynthPreset>),
+      name: (rawSynth as Partial<SynthPreset>).name || 'My Synth',
+      adsr: { ...fallback.synths[0]!.adsr, ...((rawSynth as Partial<SynthPreset>).adsr ?? {}) },
+    }))
+    : fallback.synths;
   return {
     ...fallback,
     ...raw,
-    schemaVersion: 2,
+    schemaVersion: 3,
     bpm: clamp(Number(raw.bpm ?? fallback.bpm), 40, 300),
     key: raw.key || fallback.key,
     timeSignature: {
@@ -71,6 +79,7 @@ function normalizeProject(raw: Partial<Project>): Project | null {
     },
     projectLengthBeats,
     tracks,
+    synths,
     sections: Array.isArray(raw.sections) ? raw.sections.map((section) => ({
       ...section,
       id: section.id || `section-${Math.random().toString(36).slice(2)}`,
@@ -193,6 +202,10 @@ class ProjectStore {
 
   addTrack(): void {
     const track = createTrack(`Lead ${this.state.project.tracks.filter((item) => item.type === 'instrument').length + 1}`);
+    const firstSynth = this.state.project.synths[0];
+    if (firstSynth) {
+      track.instrument = { ...track.instrument, presetId: firstSynth.id, oscillator: firstSynth.oscillator, adsr: { ...firstSynth.adsr }, volume: firstSynth.volume };
+    }
     const project = {
       ...this.state.project,
       tracks: [...this.state.project.tracks, track],
@@ -205,6 +218,29 @@ class ProjectStore {
     const track = createTrack(`Drums ${this.state.project.tracks.filter((item) => item.type === 'drum').length + 1}`, 'drum');
     const project = { ...this.state.project, tracks: [...this.state.project.tracks, track], updatedAt: new Date().toISOString() };
     this.commit({ ...this.state, project, selectedTrackId: track.id, selectedNoteId: null, selectedNoteIds: [], isDirty: true });
+  }
+
+  addSynth(name: string): SynthPreset {
+    const synth = createSynth(name);
+    this.updateProject((project) => ({ ...project, synths: [...project.synths, synth] }));
+    return synth;
+  }
+
+  updateSynth(synthId: string, changes: Partial<Omit<SynthPreset, 'id'>>): void {
+    this.updateProject((project) => ({
+      ...project,
+      synths: project.synths.map((synth) => synth.id === synthId ? { ...synth, ...changes } : synth),
+    }));
+  }
+
+  updateSynthParamsForTracks(synthId: string, changes: Partial<Omit<SynthPreset, 'id'>>): void {
+    this.updateProject((project) => ({
+      ...project,
+      synths: project.synths.map((synth) => synth.id === synthId ? { ...synth, ...changes } : synth),
+      tracks: project.tracks.map((track) => track.instrument.presetId === synthId
+        ? { ...track, instrument: { ...track.instrument, ...changes } }
+        : track),
+    }));
   }
 
   deleteTrack(trackId: string): boolean {

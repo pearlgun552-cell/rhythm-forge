@@ -8,7 +8,9 @@ import { PianoRoll } from './piano-roll/PianoRoll';
 import { audioEngine } from './audio/AudioEngine';
 import { sequencer } from './sequencer/transport';
 import { useTransport } from './sequencer/useTransport';
+import { languageStore, useLanguage } from './i18n';
 import { projectStore, useProjectStore } from './store/projectStore';
+import { exportProjectAsMp3, saveProjectFile } from './utils/projectFiles';
 
 function isEditingText(): boolean {
   const element = document.activeElement;
@@ -18,6 +20,7 @@ function isEditingText(): boolean {
 export default function App() {
   const { project, selectedTrackId, selectedNoteId, selectedNoteIds, isDirty } = useProjectStore();
   const transport = useTransport();
+  const { t } = useLanguage();
   const [metronome, setMetronome] = useState(false);
   const [octave, setOctave] = useState(4);
   const [isRecording, setIsRecording] = useState(false);
@@ -96,6 +99,22 @@ export default function App() {
     finishRecording();
     sequencer.stop();
   }, [finishRecording]);
+
+  useEffect(() => {
+    const bridge = window.rhythmForge;
+    if (!bridge) return;
+    const offLanguage = bridge.onLanguageChange((language) => languageStore.setLanguage(language));
+    const offSave = bridge.onSaveProject(() => saveProjectFile(projectStore.getSnapshot().project));
+    const offExport = bridge.onExportMp3(() => { void exportProjectAsMp3(projectStore.getSnapshot().project); });
+    // Tell the main process the persisted language so the View menu radio
+    // reflects the current selection on startup.
+    bridge.setLanguage(languageStore.getLanguage());
+    return () => {
+      offLanguage();
+      offSave();
+      offExport();
+    };
+  }, []);
 
   const toggleMetronome = (enabled: boolean) => {
     setMetronome(enabled);
@@ -183,6 +202,7 @@ export default function App() {
         </div>
         <InstrumentPanel
           track={selectedTrack}
+          synths={project.synths}
           project={project}
           octave={octave}
           activePitches={activePitches}
@@ -190,10 +210,10 @@ export default function App() {
         />
       </main>
       <footer className="status-bar">
-        <span className={isRecording ? 'recording-status active' : 'recording-status'}><i /> {isRecording ? 'RECORDING' : 'AUDIO CLOCK'}</span>
-        <span>{project.tracks.length} TRACK{project.tracks.length === 1 ? '' : 'S'}</span>
-        <span>LOCAL FIRST</span>
-        <span className="status-tip">R / ● records keyboard to selected track · A–K play · Z/X octave</span>
+        <span className={isRecording ? 'recording-status active' : 'recording-status'}><i /> {isRecording ? t('app.recording') : t('app.audioClock')}</span>
+        <span>{project.tracks.length} {project.tracks.length === 1 ? t('app.track') : t('app.tracks')}</span>
+        <span>{t('app.localFirst')}</span>
+        <span className="status-tip">{t('app.statusTip')}</span>
       </footer>
     </div>
   );

@@ -22,6 +22,21 @@ export interface Instrument {
   oscillator: OscillatorWaveform;
   adsr: ADSREnvelope;
   volume: number;
+  presetId?: string;
+  oscCustom?: boolean;
+  customOscillator?: OscillatorWaveform;
+  customAdsr?: ADSREnvelope;
+}
+
+export interface SynthPreset {
+  id: string;
+  name: string;
+  oscillator: OscillatorWaveform;
+  adsr: ADSREnvelope;
+  volume: number;
+  oscCustom?: boolean;
+  customOscillator?: OscillatorWaveform;
+  customAdsr?: ADSREnvelope;
 }
 
 export interface Note {
@@ -73,6 +88,7 @@ export interface Project {
   timeSignature: TimeSignature;
   projectLengthBeats: number;
   tracks: Track[];
+  synths: SynthPreset[];
   sections: Section[];
   reverb: ReverbSettings;
   createdAt: string;

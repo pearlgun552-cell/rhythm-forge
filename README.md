@@ -2,7 +2,7 @@
 
 [![Windows Build](https://github.com/pearlgun552-cell/rhythm-forge/actions/workflows/windows-build.yml/badge.svg)](https://github.com/pearlgun552-cell/rhythm-forge/actions/workflows/windows-build.yml)
 
-面向音游曲创作的本地桌面音乐制作软件骨架。当前版本覆盖项目数据、基础复音合成器、采样钢琴、电脑键盘演奏与录入、Piano Roll、音频时钟调度和多音轨编辑。
+面向音游曲创作的本地桌面音乐制作软件骨架。当前版本覆盖项目数据、基础复音合成器、采样钢琴、电脑键盘演奏与录入、Piano Roll、音频时钟调度、多音轨编辑、自定义采样导入、原生中文菜单、界面语言切换（简体中文 / English）与项目导出（保存项目、导出为 MP3）。
 
 ## 技术栈
 
@@ -10,7 +10,7 @@
 - React + TypeScript：界面与类型系统
 - Vite：开发与构建
 - Web Audio API：PolySynth、ADSR 和音频调度
-- Salamander Grand Piano：本地多采样 Yamaha C5 钢琴音色（CC BY 3.0）
+- Salamander Grand Piano：单个基准采样的 Yamaha C5 钢琴音色，其余音阶由软件通过 `playbackRate` 实时变调生成（CC BY 3.0）
 - `localStorage`：本地项目保存
 
 没有使用 Tone.js；当前音频需求很小，直接基于 Web Audio API 能减少依赖，并让调度与 Hanging Notes 处理更明确。
@@ -96,6 +96,7 @@ src/sequencer/        AudioContext 时钟调度与 Transport 状态
 src/piano-roll/       Piano Roll 编辑视图
 src/components/DrumStepSequencer.tsx  16-Step 鼓组编辑器
 src/instruments/      电脑键盘映射与演奏逻辑
+src/i18n/             界面语言切换与中文/英文语言包
 src/project/          默认项目与工厂函数
 src/store/            统一 Project Store
 src/components/       Transport、Track、Arrangement、Instrument UI
