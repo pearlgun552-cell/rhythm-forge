@@ -2,7 +2,7 @@
 
 [![Windows Build](https://github.com/pearlgun552-cell/rhythm-forge/actions/workflows/windows-build.yml/badge.svg)](https://github.com/pearlgun552-cell/rhythm-forge/actions/workflows/windows-build.yml)
 
-面向音游曲创作的本地桌面音乐制作软件骨架。当前版本覆盖项目数据、基础复音合成器、采样钢琴、电脑键盘演奏与录入、Piano Roll、音频时钟调度和多音轨编辑。
+面向音游曲创作的本地桌面音乐制作软件骨架。当前版本覆盖项目数据、基础复音合成器、采样钢琴、电脑键盘演奏与录入、Piano Roll、音频时钟调度、多音轨编辑、自定义采样导入、原生中文菜单、界面语言切换（简体中文 / English）与项目导出（保存项目、导出为 MP3）。
 
 ## 技术栈
 
@@ -10,7 +10,7 @@
 - React + TypeScript：界面与类型系统
 - Vite：开发与构建
 - Web Audio API：PolySynth、ADSR 和音频调度
-- Salamander Grand Piano：本地多采样 Yamaha C5 钢琴音色（CC BY 3.0）
+- Salamander Grand Piano：单个基准采样的 Yamaha C5 钢琴音色，其余音阶由软件通过 `playbackRate` 实时变调生成（CC BY 3.0）
 - `localStorage`：本地项目保存
 
 没有使用 Tone.js；当前音频需求很小，直接基于 Web Audio API 能减少依赖，并让调度与 Hanging Notes 处理更明确。
@@ -72,6 +72,8 @@ npm run package:mac
 
 ## 操作
 
+- 顶部“播放位置 / Playback position”横条：点击或拖动选择起点，再按播放；暂停时可重新定位，播放中可直接跳转。循环开启时定位范围为 FROM–TO。
+- Piano Roll 上方小节尺：点击或拖动定位（遵循当前 SNAP）；Arrangement 的小节尺也可点击定位。暂停保留位置，停止回到开头；修改 BPM 保留当前播放位置。
 - `A W S E D F T G Y H U J K`：演奏当前音轨的 Synth
 - `R` 或顶部红色 `●`：开始 / 结束电脑键盘录音；录音会自动播放 Transport，并把按键时值按 1/16 拍写入当前音轨
 - `Z / X`：降低 / 升高八度
@@ -85,6 +87,7 @@ npm run package:mac
 - 顶部 `LENGTH`：选择 32 / 64 / 128 小节（内部使用 projectLengthBeats）
 - Drum Track 使用 16-Step Sequencer；右侧可调整 Track Volume、Pan、Mute、Solo 和 Master Reverb
 - 直接编辑音轨名称输入框：重命名
+- `Import` / `Export`：以 JSON 文件交换完整项目；`Ctrl/Cmd + S` 快速保存到本地。
 
 ## 目录
 
@@ -95,6 +98,7 @@ src/sequencer/        AudioContext 时钟调度与 Transport 状态
 src/piano-roll/       Piano Roll 编辑视图
 src/components/DrumStepSequencer.tsx  16-Step 鼓组编辑器
 src/instruments/      电脑键盘映射与演奏逻辑
+src/i18n/             界面语言切换与中文/英文语言包
 src/project/          默认项目与工厂函数
 src/store/            统一 Project Store
 src/components/       Transport、Track、Arrangement、Instrument UI
@@ -109,7 +113,7 @@ src/utils/musicTheory.ts  调性与 Scale Guide
 
 ## 当前边界
 
-当前是 32–128 小节长度选择的 MVP；Piano Roll 已支持移动、缩放、多选、复制粘贴与 Grid Snap，Arrangement 支持 Sections，鼓组使用基础 16-Step Sequencer。尚无音频轨、麦克风录音、WAV/MP3 导出、VST、AI 或云功能。
+当前是 32–128 小节长度选择的 MVP；Piano Roll 已支持移动、缩放、多选、复制粘贴与 Grid Snap，Arrangement 支持 Sections，鼓组使用基础 16-Step Sequencer。项目可通过 JSON 导入导出；尚无音频轨、麦克风录音、WAV/MP3 导出、VST、AI 或云功能。
 
 钢琴采样署名和许可证见 `public/samples/piano/LICENSE.md`。
 

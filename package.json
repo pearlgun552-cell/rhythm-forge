@@ -1,7 +1,7 @@
 {
   "name": "rhythm-forge-desktop",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.3.0",
   "productName": "Rhythm Forge",
   "description": "A local-first desktop MVP for rhythm-game music creation.",
   "repository": {
@@ -17,6 +17,7 @@
     "dev": "cross-env NODE_ENV=development concurrently -k -s first \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "dev:web": "vite --host 127.0.0.1",
     "typecheck": "tsc --noEmit",
+    "test": "node scripts/music-domain-test.mjs",
     "build": "tsc --noEmit && vite build",
     "start": "electron .",
     "package:mac": "npm run build && electron-packager . \"Rhythm Forge\" --platform=darwin --arch=arm64 --out=release --overwrite --prune --ignore=\"^/(release.*|\\.git|\\.github|\\.npm-cache|\\.electron-cache|\\.tmp.*|\\.package-stage.*)$\" && codesign --force --deep --sign - \"release/Rhythm Forge-darwin-arm64/Rhythm Forge.app\"",
@@ -24,17 +25,20 @@
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
+    "@breezystack/lamejs": "^1.2.7",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0",
+    "@playwright/test": "^1.63.0",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.0.2",
     "concurrently": "^9.2.1",
     "cross-env": "^10.0.0",
     "electron": "^44.2.0",
+    "esbuild": "^0.28.2",
     "typescript": "^5.9.2",
     "vite": "^7.1.4",
     "wait-on": "^8.0.4"

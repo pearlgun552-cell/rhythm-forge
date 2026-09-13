@@ -1,3 +1,4 @@
+import { rootPitchForKey } from '../utils/musicTheory';
 export const COMPUTER_KEY_OFFSETS: Record<string, number> = {
   KeyA: 0,
   KeyW: 1,
@@ -16,11 +17,28 @@ export const COMPUTER_KEY_OFFSETS: Record<string, number> = {
 
 export const COMPUTER_KEY_LABELS = ['A', 'W', 'S', 'E', 'D', 'F', 'T', 'G', 'Y', 'H', 'U', 'J', 'K'];
 
+const SCALE_INTERVALS = {
+  major: [0, 2, 4, 5, 7, 9, 11],
+  minor: [0, 2, 3, 5, 7, 8, 10],
+} as const;
+
 const NOTE_NAMES = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
 
-export function pitchForCode(code: string, octave: number): number | null {
+export const keyRootPitch = rootPitchForKey;
+
+export function scaleKeyboardOffsets(key: string): number[] {
+  const minor = /minor/i.test(key);
+  const intervals = minor ? SCALE_INTERVALS.minor : SCALE_INTERVALS.major;
+  return COMPUTER_KEY_LABELS.map((_, index) => intervals[index % intervals.length]! + 12 * Math.floor(index / intervals.length));
+}
+
+export function pitchForCode(code: string, octave: number, mode: 'chromatic' | 'scale' = 'chromatic', key = 'C major'): number | null {
   const offset = COMPUTER_KEY_OFFSETS[code];
-  return offset === undefined ? null : (octave + 1) * 12 + offset;
+  if (offset === undefined) return null;
+  if (mode === 'chromatic') return (octave + 1) * 12 + offset;
+  const scaleOffset = scaleKeyboardOffsets(key)[Object.values(COMPUTER_KEY_OFFSETS).indexOf(offset)];
+  const pitch = scaleOffset === undefined ? -1 : (octave + 1) * 12 + keyRootPitch(key) + scaleOffset;
+  return pitch >= 0 && pitch <= 127 ? pitch : null;
 }
 
 export function noteName(pitch: number): string {

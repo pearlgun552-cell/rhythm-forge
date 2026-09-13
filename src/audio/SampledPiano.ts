@@ -1,4 +1,5 @@
 import type { Instrument } from '../types/music';
+import { sampleStore } from '../store/sampleStore';
 import type { VoiceOptions } from './PolySynth';
 
 interface PianoVoice {
@@ -12,21 +13,8 @@ interface PianoSample {
   pitch: number;
 }
 
-const PIANO_SAMPLES: PianoSample[] = [
-  { file: 'C1.mp3', pitch: 24 },
-  { file: 'Fs1.mp3', pitch: 30 },
-  { file: 'C2.mp3', pitch: 36 },
-  { file: 'Fs2.mp3', pitch: 42 },
-  { file: 'C3.mp3', pitch: 48 },
-  { file: 'Fs3.mp3', pitch: 54 },
-  { file: 'C4.mp3', pitch: 60 },
-  { file: 'Fs4.mp3', pitch: 66 },
-  { file: 'C5.mp3', pitch: 72 },
-  { file: 'Fs5.mp3', pitch: 78 },
-  { file: 'C6.mp3', pitch: 84 },
-  { file: 'Fs6.mp3', pitch: 90 },
-  { file: 'C7.mp3', pitch: 96 },
-];
+// Built-in samples already shipped with the app. User imports remain rooted at C4.
+const PIANO_SAMPLES: PianoSample[] = Array.from({ length: 7 }, (_, i) => ({ file: `C${i + 1}.mp3`, pitch: (i + 2) * 12 })).concat(Array.from({ length: 6 }, (_, i) => ({ file: `Fs${i + 1}.mp3`, pitch: (i + 2) * 12 + 6 })));
 
 function loadArrayBuffer(url: string): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) => {
@@ -46,26 +34,35 @@ function loadArrayBuffer(url: string): Promise<ArrayBuffer> {
 }
 
 export class SampledPiano {
-  private readonly buffers = new Map<number, AudioBuffer>();
+  private buffers = new Map<number, AudioBuffer>();
+  private generation = 0;
   private readonly liveVoices = new Map<string, PianoVoice>();
   private readonly scheduledVoices = new Set<PianoVoice>();
   private loadPromise: Promise<void> | null = null;
 
-  constructor(private readonly context: AudioContext, private readonly destination: AudioNode) {}
+  constructor(private readonly context: BaseAudioContext, private readonly destination: AudioNode) {}
 
   load(): Promise<void> {
-    if (this.buffers.size === PIANO_SAMPLES.length) return Promise.resolve();
+    if (this.buffers.size) return Promise.resolve();
     if (!this.loadPromise) {
-      this.loadPromise = Promise.all(PIANO_SAMPLES.map(async ({ file, pitch }) => {
-        const url = new URL(`samples/piano/${file}`, document.baseURI).href;
-        const data = await loadArrayBuffer(url);
-        this.buffers.set(pitch, await this.context.decodeAudioData(data.slice(0)));
-      })).then(() => undefined).catch((error: unknown) => {
-        this.loadPromise = null;
-        throw error;
-      });
+      const generation = this.generation;
+      this.loadPromise = (async () => {
+        const imported = sampleStore.getImported();
+        const entries: Array<[number, AudioBuffer]> = imported
+          ? [[60, await this.context.decodeAudioData(imported.data.slice(0))]]
+          : await Promise.all(PIANO_SAMPLES.map(async sample => {
+            const url = new URL(`samples/piano/${sample.file}`, document.baseURI).href;
+            const data = await loadArrayBuffer(url);
+            return [sample.pitch, await this.context.decodeAudioData(data.slice(0))] as [number, AudioBuffer];
+          }));
+        if (generation === this.generation) this.buffers = new Map(entries);
+      })().catch((error: unknown) => { if (generation === this.generation) this.loadPromise = null; throw error; });
     }
     return this.loadPromise;
+  }
+
+  reset(): void {
+    this.stopAll(); this.generation++; this.buffers.clear(); this.loadPromise = null;
   }
 
   noteOn(voiceId: string, pitch: number, instrument: Instrument, options: VoiceOptions = {}): void {
@@ -132,7 +129,8 @@ export class SampledPiano {
   }
 
   private createVoice(pitch: number, instrument: Instrument, options: VoiceOptions): PianoVoice | null {
-    const rootPitch = this.nearestSamplePitch(pitch);
+    const rootPitch = [...this.buffers.keys()].sort((a, b) => Math.abs(a - pitch) - Math.abs(b - pitch))[0];
+    if (rootPitch === undefined) return null;
     const buffer = this.buffers.get(rootPitch);
     if (!buffer) return null;
     const source = this.context.createBufferSource();
@@ -145,12 +143,6 @@ export class SampledPiano {
     gain.connect(panner);
     panner.connect(options.output ?? this.destination);
     return { source, gain, panner };
-  }
-
-  private nearestSamplePitch(pitch: number): number {
-    return PIANO_SAMPLES.reduce((nearest, sample) => (
-      Math.abs(sample.pitch - pitch) < Math.abs(nearest - pitch) ? sample.pitch : nearest
-    ), 24);
   }
 
   private peakLevel(instrument: Instrument, options: VoiceOptions): number {

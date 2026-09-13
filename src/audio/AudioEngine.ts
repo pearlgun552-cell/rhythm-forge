@@ -8,7 +8,8 @@ interface TrackChannel {
 }
 
 export class AudioEngine {
-  private context: AudioContext | null = null;
+  constructor(context?: AudioContext | OfflineAudioContext) { if (context) this.initializeContext(context); }
+  private context: AudioContext | OfflineAudioContext | null = null;
   private master: GainNode | null = null;
   private mixBus: GainNode | null = null;
   private dryGain: GainNode | null = null;
@@ -22,7 +23,7 @@ export class AudioEngine {
 
   async resume(): Promise<void> {
     this.ensureContext();
-    if (this.context?.state === 'suspended') await this.context.resume();
+    if (this.context instanceof AudioContext && this.context.state === 'suspended') await this.context.resume();
   }
 
   get currentTime(): number {
@@ -54,6 +55,12 @@ export class AudioEngine {
       this.ensureContext();
       await this.piano?.load();
     }
+  }
+
+  async reloadPiano(): Promise<void> {
+    this.ensureContext();
+    this.piano?.reset();
+    await this.piano?.load();
   }
 
   noteOn(voiceId: string, pitch: number, instrument: Instrument, options: VoiceOptions = {}): void {
@@ -205,7 +212,7 @@ export class AudioEngine {
 
   private getTrackOutput(trackId?: string): AudioNode {
     this.ensureContext();
-    if (trackId) return this.ensureTrackChannel(trackId).panner;
+    if (trackId) return this.ensureTrackChannel(trackId).input;
     return this.mixBus ?? this.master!;
   }
 
@@ -240,7 +247,11 @@ export class AudioEngine {
 
   private ensureContext(): void {
     if (this.context) return;
-    this.context = new AudioContext({ latencyHint: 'interactive' });
+    this.initializeContext(new AudioContext({ latencyHint: 'interactive' }));
+  }
+
+  private initializeContext(context: AudioContext | OfflineAudioContext): void {
+    this.context = context;
     this.master = this.context.createGain();
     this.mixBus = this.context.createGain();
     this.dryGain = this.context.createGain();

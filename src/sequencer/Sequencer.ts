@@ -1,18 +1,13 @@
 import { audioEngine } from '../audio/AudioEngine';
-import type { Project, Track } from '../types/music';
+import type { Project } from '../types/music';
 import { beatsPerBar } from '../utils/musicConstants';
+import { positionAt, schedulerRanges, trackEvents } from '../utils/musicMath';
 
 export type TransportStatus = 'stopped' | 'playing' | 'paused';
-
-export interface TransportSnapshot {
-  status: TransportStatus;
-  positionBeats: number;
-}
-
+export interface TransportSnapshot { status: TransportStatus; positionBeats: number; }
 type Listener = (snapshot: TransportSnapshot) => void;
-
+type AudioPort = Pick<typeof audioEngine, 'currentTime' | 'resume' | 'syncProject' | 'prepareInstruments' | 'stopScheduled' | 'stopAll' | 'scheduleNote' | 'scheduleDrum' | 'scheduleMetronome'>;
 const LOOKAHEAD_SECONDS = 0.12;
-const SCHEDULER_INTERVAL_MS = 25;
 
 export class Sequencer {
   private status: TransportStatus = 'stopped';
@@ -20,168 +15,127 @@ export class Sequencer {
   private anchorTime = 0;
   private anchorBeat = 0;
   private scheduleCursorBeat = 0;
-  private schedulerTimer: number | null = null;
-  private animationFrame: number | null = null;
+  private clockProject: Project;
+  private schedulerTimer: ReturnType<typeof setInterval> | null = null;
   private metronomeEnabled = false;
   private listeners = new Set<Listener>();
+  private discontinuityListeners = new Set<() => void>();
+  private playRequest = 0;
+  private starting = false;
+  private chase = false;
 
-  constructor(private readonly getProject: () => Project) {}
+  constructor(private readonly getProject: () => Project, private readonly audio: AudioPort = audioEngine) { this.clockProject = getProject(); }
+  subscribe(listener: Listener): () => void { this.listeners.add(listener); listener(this.snapshot()); return () => this.listeners.delete(listener); }
+  // Called before seek/stop/configuration changes, while the recording clock is still valid.
+  onDiscontinuity(listener: () => void): () => void { this.discontinuityListeners.add(listener); return () => this.discontinuityListeners.delete(listener); }
+  private finishNotes(): void { this.discontinuityListeners.forEach(listener => listener()); }
+  setMetronome(enabled: boolean): void { this.metronomeEnabled = enabled; }
+  getCurrentBeat(): number { return this.status === 'playing' ? this.anchorBeat + (this.audio.currentTime - this.anchorTime) * this.clockProject.bpm / 60 : this.positionBeats; }
+  getStatus(): TransportStatus { return this.status; }
+  getPositionBeat(): number { return positionAt(this.getCurrentBeat(), this.clockProject); }
 
-  subscribe(listener: Listener): () => void {
-    this.listeners.add(listener);
-    listener(this.snapshot());
-    return () => this.listeners.delete(listener);
-  }
-
-  setMetronome(enabled: boolean): void {
-    this.metronomeEnabled = enabled;
-  }
-
-  getCurrentBeat(): number {
-    return this.currentAbsoluteBeat();
-  }
-
-  projectChanged(): void {
-    if (this.status !== 'playing') return;
-    this.positionBeats = Math.min(this.getProject().projectLengthBeats, this.currentAbsoluteBeat());
+  seek(beat: number): void {
+    this.finishNotes();
+    const project = this.getProject();
+    this.clockProject = project;
+    const start = project.loopEnabled ? project.loopStartBeat : 0;
+    const end = project.loopEnabled ? project.loopEndBeat : project.projectLengthBeats;
+    this.positionBeats = Math.max(start, Math.min(end, Number.isFinite(beat) ? beat : start));
+    if (project.loopEnabled && this.positionBeats >= end) this.positionBeats = start;
     this.anchorBeat = this.positionBeats;
-    this.anchorTime = audioEngine.currentTime;
-    this.scheduleCursorBeat = this.positionBeats;
-    audioEngine.stopScheduled();
-    this.scheduleAhead();
+    this.anchorTime = this.audio.currentTime;
+    this.scheduleCursorBeat = this.anchorBeat;
+    this.audio.stopScheduled();
+    this.chase = true;
+    this.pump(); this.emit();
+  }
+
+  projectChanged(recording = false): void {
+    const next = this.getProject();
+    const previous = this.clockProject;
+    const timing = next.bpm !== previous.bpm || next.loopEnabled !== previous.loopEnabled || next.loopStartBeat !== previous.loopStartBeat || next.loopEndBeat !== previous.loopEndBeat || next.projectLengthBeats !== previous.projectLengthBeats;
+    const noteChange = next.tracks.length !== previous.tracks.length || next.tracks.some((track, i) => track.notes !== previous.tracks[i]?.notes || track.clips !== previous.tracks[i]?.clips || track.drumPattern !== previous.tracks[i]?.drumPattern || track.mute !== previous.tracks[i]?.mute || track.solo !== previous.tracks[i]?.solo || track.instrument !== previous.tracks[i]?.instrument);
+    if (timing) {
+      this.finishNotes();
+      const position = this.getPositionBeat();
+      this.clockProject = next;
+      this.positionBeats = positionAt(position, next);
+      this.anchorBeat = this.positionBeats;
+      this.anchorTime = this.audio.currentTime;
+    } else this.clockProject = next;
+    if (this.status === 'playing' && (timing || (noteChange && !recording))) {
+      this.audio.stopScheduled();
+      this.scheduleCursorBeat = this.getCurrentBeat();
+      this.chase = true;
+      this.pump();
+    }
   }
 
   async play(): Promise<void> {
-    const project = this.getProject();
-    if (this.status === 'playing') return;
-    if (this.positionBeats >= project.projectLengthBeats) this.positionBeats = 0;
-    await audioEngine.resume();
-    audioEngine.syncProject(project);
-    await audioEngine.prepareInstruments(project.tracks.filter((track) => track.type === 'instrument').map((track) => track.instrument));
-    this.anchorTime = audioEngine.currentTime;
-    this.anchorBeat = this.positionBeats;
-    this.scheduleCursorBeat = this.positionBeats;
-    this.status = 'playing';
-    this.scheduleAhead();
-    this.schedulerTimer = window.setInterval(() => this.scheduleAhead(), SCHEDULER_INTERVAL_MS);
-    this.tickUi();
-    this.emit();
-  }
-
-  pause(): void {
-    if (this.status !== 'playing') return;
-    this.positionBeats = Math.min(this.getProject().projectLengthBeats, this.currentAbsoluteBeat());
-    this.clearTimers();
-    audioEngine.stopAll();
-    this.status = 'paused';
-    this.emit();
-  }
-
-  stop(): void {
-    this.clearTimers();
-    audioEngine.stopAll();
-    this.status = 'stopped';
-    this.positionBeats = 0;
-    this.anchorBeat = 0;
-    this.scheduleCursorBeat = 0;
-    this.emit();
-  }
-
-  private currentAbsoluteBeat(): number {
-    if (this.status !== 'playing') return this.positionBeats;
-    const bpm = this.getProject().bpm;
-    return this.anchorBeat + (audioEngine.currentTime - this.anchorTime) * (bpm / 60);
-  }
-
-  private scheduleAhead(): void {
-    if (this.status !== 'playing') return;
-    const project = this.getProject();
-    const beatsPerSecond = project.bpm / 60;
-    const rangeStart = this.scheduleCursorBeat;
-    const rangeEnd = Math.min(
-      project.projectLengthBeats,
-      Math.max(rangeStart, this.currentAbsoluteBeat() + LOOKAHEAD_SECONDS * beatsPerSecond),
-    );
-    const anySolo = project.tracks.some((track) => track.solo);
-
-    project.tracks.forEach((track) => {
-      if (track.mute || (anySolo && !track.solo)) return;
-      if (track.type === 'drum') this.scheduleDrumTrack(track, rangeStart, rangeEnd, project, beatsPerSecond);
-      else this.scheduleInstrumentTrack(track, rangeStart, rangeEnd, project, beatsPerSecond);
-    });
-
-    if (this.metronomeEnabled) {
-      const firstBeat = Math.ceil(rangeStart);
-      for (let beat = firstBeat; beat < rangeEnd; beat += 1) {
-        const time = this.anchorTime + (beat - this.anchorBeat) / beatsPerSecond;
-        audioEngine.scheduleMetronome(Math.max(audioEngine.currentTime, time), beat % beatsPerBar(project.timeSignature) === 0);
-      }
-    }
-    this.scheduleCursorBeat = rangeEnd;
-  }
-
-  private scheduleInstrumentTrack(track: Track, rangeStart: number, rangeEnd: number, project: Project, beatsPerSecond: number): void {
-    track.notes.forEach((note) => {
-      const absoluteStart = note.start;
-      if (absoluteStart < rangeStart || absoluteStart >= rangeEnd) return;
-      const startTime = this.anchorTime + (absoluteStart - this.anchorBeat) / beatsPerSecond;
-      audioEngine.scheduleNote(
-        note.pitch,
-        Math.max(audioEngine.currentTime, startTime),
-        note.duration / beatsPerSecond,
-        track.instrument,
-        { velocity: note.velocity, trackVolume: track.volume, pan: track.pan, trackId: track.id },
-      );
-    });
-  }
-
-  private scheduleDrumTrack(track: Track, rangeStart: number, rangeEnd: number, project: Project, beatsPerSecond: number): void {
-    const pattern = track.drumPattern;
-    if (!pattern) return;
-    const barBeats = beatsPerBar(project.timeSignature);
-    const stepBeats = barBeats / pattern.stepCount;
-    const firstBar = Math.max(0, Math.floor(rangeStart / barBeats) - 1);
-    const lastBar = Math.ceil(rangeEnd / barBeats) + 1;
-    (Object.keys(pattern.steps) as Array<keyof typeof pattern.steps>).forEach((sound) => {
-      pattern.steps[sound].forEach((enabled, step) => {
-        if (!enabled) return;
-        for (let bar = firstBar; bar <= lastBar; bar += 1) {
-          const absoluteStart = bar * barBeats + step * stepBeats;
-          if (absoluteStart < rangeStart || absoluteStart >= rangeEnd || absoluteStart >= project.projectLengthBeats) continue;
-          const startTime = this.anchorTime + (absoluteStart - this.anchorBeat) / beatsPerSecond;
-          audioEngine.scheduleDrum(sound, Math.max(audioEngine.currentTime, startTime), track.id, 0.86);
-        }
-      });
-    });
-  }
-
-  private tickUi = (): void => {
-    if (this.status !== 'playing') return;
-    const project = this.getProject();
-    this.positionBeats = Math.min(project.projectLengthBeats, this.currentAbsoluteBeat());
-    if (this.positionBeats >= project.projectLengthBeats) {
-      this.clearTimers();
-      this.status = 'stopped';
+    if (this.status === 'playing' || this.starting) return;
+    const request = ++this.playRequest;
+    this.starting = true;
+    try {
+      await this.audio.resume();
+      const project = this.getProject();
+      await this.audio.prepareInstruments(project.tracks.filter(t => t.type === 'instrument').map(t => t.instrument));
+      if (request !== this.playRequest) return;
+      this.clockProject = this.getProject(); this.audio.syncProject(this.clockProject);
+      const end = this.clockProject.loopEnabled ? this.clockProject.loopEndBeat : this.clockProject.projectLengthBeats;
+      if (this.positionBeats >= end || (this.clockProject.loopEnabled && this.positionBeats < this.clockProject.loopStartBeat)) this.positionBeats = this.clockProject.loopEnabled ? this.clockProject.loopStartBeat : 0;
+      this.anchorTime = this.audio.currentTime;
+      this.anchorBeat = this.positionBeats;
+      this.scheduleCursorBeat = this.positionBeats;
+      this.status = 'playing'; this.chase = true;
+      this.pump();
+      this.schedulerTimer = setInterval(() => this.pump(), 25);
       this.emit();
-      return;
+    } finally { if (request === this.playRequest) this.starting = false; }
+  }
+  pause(): void {
+    ++this.playRequest; this.starting = false;
+    if (this.status !== 'playing') return;
+    this.finishNotes(); this.positionBeats = this.getPositionBeat();
+    this.clearTimer(); this.audio.stopAll(); this.status = 'paused'; this.emit();
+  }
+  stop(): void {
+    ++this.playRequest; this.starting = false;
+    this.finishNotes(); this.clearTimer(); this.audio.stopAll();
+    this.status = 'stopped'; this.positionBeats = 0; this.anchorBeat = 0; this.scheduleCursorBeat = 0; this.emit();
+  }
+
+  // One monotonic audio clock; scheduling wraps ranges without moving that clock early.
+  pump(): void {
+    if (this.status !== 'playing') return;
+    const project = this.clockProject;
+    const current = this.getCurrentBeat();
+    const bps = project.bpm / 60;
+    if (!project.loopEnabled && current >= project.projectLengthBeats) {
+      this.finishNotes(); this.positionBeats = project.projectLengthBeats;
+      this.clearTimer(); this.status = 'stopped'; this.emit(); return;
     }
-    this.emit();
-    this.animationFrame = requestAnimationFrame(this.tickUi);
-  };
-
-  private clearTimers(): void {
-    if (this.schedulerTimer !== null) window.clearInterval(this.schedulerTimer);
-    if (this.animationFrame !== null) cancelAnimationFrame(this.animationFrame);
-    this.schedulerTimer = null;
-    this.animationFrame = null;
+    if (current - this.scheduleCursorBeat > LOOKAHEAD_SECONDS * bps * 2) { this.scheduleCursorBeat = current; this.chase = true; }
+    const until = current + LOOKAHEAD_SECONDS * bps;
+    const anySolo = project.tracks.some(t => t.solo);
+    for (const range of schedulerRanges(this.scheduleCursorBeat, until, project)) {
+      const timeAt = (beat: number) => this.anchorTime + (range.absoluteFrom + beat - range.from - this.anchorBeat) / bps;
+      for (const track of project.tracks) {
+        if (track.mute || (anySolo && !track.solo)) continue;
+        for (const note of trackEvents(track, project, range.from, range.to, this.chase)) {
+          const start = Math.max(note.start, range.from);
+          const end = Math.min(note.start + note.duration, project.loopEnabled ? project.loopEndBeat : project.projectLengthBeats);
+          const time = Math.max(this.audio.currentTime, timeAt(start));
+          if (track.type === 'drum' && note.drumSound) this.audio.scheduleDrum(note.drumSound, time, track.id, note.velocity);
+          else this.audio.scheduleNote(note.pitch, time, Math.max(0.001, (end - start) / bps), track.instrument, { velocity: note.velocity, trackId: track.id });
+        }
+      }
+      if (this.metronomeEnabled) for (let beat = Math.ceil(range.from); beat < range.to; beat++) this.audio.scheduleMetronome(Math.max(this.audio.currentTime, timeAt(beat)), beat % beatsPerBar(project.timeSignature) === 0);
+      this.chase = false;
+    }
+    this.scheduleCursorBeat = Math.max(this.scheduleCursorBeat, until);
+    this.positionBeats = positionAt(current, project); this.emit();
   }
-
-  private snapshot(): TransportSnapshot {
-    return { status: this.status, positionBeats: this.positionBeats };
-  }
-
-  private emit(): void {
-    const snapshot = this.snapshot();
-    this.listeners.forEach((listener) => listener(snapshot));
-  }
+  private clearTimer(): void { if (this.schedulerTimer !== null) clearInterval(this.schedulerTimer); this.schedulerTimer = null; }
+  private snapshot(): TransportSnapshot { return { status: this.status, positionBeats: this.positionBeats }; }
+  private emit(): void { const snapshot = this.snapshot(); this.listeners.forEach(listener => listener(snapshot)); }
 }

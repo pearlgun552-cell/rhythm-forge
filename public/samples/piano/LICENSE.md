@@ -1,6 +1,6 @@
-# Salamander Grand Piano samples
+# Salamander Grand Piano sample
 
-These audio samples are derived from the Salamander Grand Piano sample set,
+This audio sample is derived from the Salamander Grand Piano sample set,
 recorded by Alexander Holm from a Yamaha C5 grand piano.
 
 - Source: https://github.com/Tonejs/audio/tree/master/salamander
@@ -8,4 +8,5 @@ recorded by Alexander Holm from a Yamaha C5 grand piano.
 - License: Creative Commons Attribution 3.0
 - License text: https://creativecommons.org/licenses/by/3.0/
 
-The samples are redistributed locally so Rhythm Forge can remain offline-first.
+The single base sample is redistributed locally; every other pitch is generated
+at runtime by pitch-shifting it, so Rhythm Forge can remain offline-first.

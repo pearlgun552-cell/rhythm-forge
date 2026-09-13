@@ -1,14 +1,26 @@
-import type { DrumPattern, Instrument, InstrumentPreset, Project, Track, TrackType } from '../types/music';
+import type { ADSREnvelope, DrumPattern, Instrument, InstrumentPreset, Project, SynthPreset, Track, TrackType } from '../types/music';
 import { createId } from '../utils/id';
 import { DEFAULT_PROJECT_LENGTH_BEATS } from '../utils/musicConstants';
+
+export const defaultADSR: ADSREnvelope = { attack: 0.02, decay: 0.16, sustain: 0.58, release: 0.24 };
 
 export const defaultInstrument: Instrument = {
   type: 'poly-synth',
   preset: 'lead',
   oscillator: 'sawtooth',
-  adsr: { attack: 0.02, decay: 0.16, sustain: 0.58, release: 0.24 },
+  adsr: structuredClone(defaultADSR),
   volume: 0.72,
 };
+
+export function createSynth(name = 'My Synth'): SynthPreset {
+  return {
+    id: createId('synth'),
+    name,
+    oscillator: 'sawtooth',
+    adsr: structuredClone(defaultADSR),
+    volume: 0.72,
+  };
+}
 
 export function createDrumPattern(): DrumPattern {
   const sounds = ['kick', 'snare', 'closed-hat', 'open-hat', 'clap'] as const;
@@ -54,15 +66,22 @@ export function applyPreset(instrument: Instrument, preset: InstrumentPreset): I
 
 export function createDefaultProject(): Project {
   const now = new Date().toISOString();
+  const synth = createSynth('我的合成器');
+  const track = createTrack('Lead');
+  track.instrument = { ...defaultInstrument, presetId: synth.id };
   return {
     id: createId('project'),
-    schemaVersion: 2,
+    schemaVersion: 4,
     name: 'New Rhythm Project',
     bpm: 174,
     key: 'C minor',
     timeSignature: { numerator: 4, denominator: 4 },
     projectLengthBeats: DEFAULT_PROJECT_LENGTH_BEATS,
-    tracks: [createTrack('Lead')],
+    loopEnabled: false,
+    loopStartBeat: 0,
+    loopEndBeat: DEFAULT_PROJECT_LENGTH_BEATS,
+    tracks: [track],
+    synths: [synth],
     sections: [],
     reverb: { enabled: false, mix: 0.22, decay: 1.8 },
     createdAt: now,

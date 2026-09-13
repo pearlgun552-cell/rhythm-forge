@@ -1,0 +1,39 @@
+{
+  "source": "削除 - Altale.mp3",
+  "sourceSha256": "1c7f4ca1ad2fa91b2d975a0e03261cf141459c8fa6cb3325f87fbebe74c67ad3",
+  "referenceDurationSeconds": 157.07537414965986,
+  "editingGridBpm": 180.0,
+  "eventTiming": "Absolute reference times preserved. Grid is not a verified constant-tempo transcription.",
+  "pitchCandidates": 2518,
+  "pitchedNotesAfterClipSplits": 2558,
+  "percussionCandidates": 798,
+  "projectDurationSeconds": 157.08333333333334,
+  "tracks": [
+    {
+      "name": "Piano · Treble",
+      "notes": 881
+    },
+    {
+      "name": "Piano · Harmony",
+      "notes": 1200
+    },
+    {
+      "name": "Bass",
+      "notes": 399
+    },
+    {
+      "name": "Upper accents",
+      "notes": 78
+    },
+    {
+      "name": "Percussion · detected onsets",
+      "notes": 798
+    }
+  ],
+  "limitations": [
+    "Mixed-audio automatic pitch estimates are not a manually verified score.",
+    "Percussion is estimated from frequency-band transients; orchestral attacks can produce false positives.",
+    "Built-in piano samples approximate the pitched arrangement; orchestral/effect timbres differ from the source.",
+    "Section markers partition reference time; no variable tempo map is encoded."
+  ]
+}

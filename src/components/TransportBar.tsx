@@ -1,6 +1,7 @@
 import type { Project } from '../types/music';
 import type { TransportStatus } from '../sequencer/Sequencer';
 import { barsForBeats, beatsPerBar } from '../utils/musicConstants';
+import { useLanguage } from '../i18n';
 
 interface TransportBarProps {
   project: Project;
@@ -16,9 +17,22 @@ interface TransportBarProps {
   onPlay: () => void;
   onPause: () => void;
   onStop: () => void;
+  onSeek: (beat: number) => void;
   onRecord: () => void;
   onMetronomeChange: (enabled: boolean) => void;
   onSave: () => void;
+  onNew: () => void;
+  onSaveAs: () => void;
+  busy: boolean;
+  onExport: () => void;
+  onImport: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  onLoopChange: (enabled: boolean) => void;
+  onLoopStartChange: (beat: number) => void;
+  onLoopEndChange: (beat: number) => void;
 }
 
 const KEYS = [
@@ -28,6 +42,7 @@ const KEYS = [
 ];
 
 export function TransportBar(props: TransportBarProps) {
+  const { t } = useLanguage();
   const beat = Math.floor(props.positionBeats);
   const barBeats = beatsPerBar(props.project.timeSignature);
   const barNumber = Math.floor(beat / barBeats) + 1;
@@ -41,23 +56,23 @@ export function TransportBar(props: TransportBarProps) {
           <span className="app-name">RHYTHM FORGE</span>
           <input
             className="project-name-input"
-            aria-label="Project Name"
+            aria-label={t('transport.projectName')}
             value={props.project.name}
             onChange={(event) => props.onNameChange(event.target.value)}
           />
         </div>
       </div>
 
-      <div className="transport-controls" aria-label="Transport">
-        <button className={props.status === 'playing' ? 'icon-control active' : 'icon-control'} onClick={props.onPlay} aria-label="Play">▶</button>
-        <button className={props.status === 'paused' ? 'icon-control active' : 'icon-control'} onClick={props.onPause} aria-label="Pause">Ⅱ</button>
-        <button className="icon-control" onClick={props.onStop} aria-label="Stop">■</button>
+      <div className="transport-controls" aria-label={t('transport.transport')}>
+        <button className={props.status === 'playing' ? 'icon-control active' : 'icon-control'} onClick={props.onPlay} aria-label={t('transport.play')}>▶</button>
+        <button className={props.status === 'paused' ? 'icon-control active' : 'icon-control'} onClick={props.onPause} aria-label={t('transport.pause')}>Ⅱ</button>
+        <button className="icon-control" onClick={props.onStop} aria-label={t('transport.stop')}>■</button>
         <button
           className={props.isRecording ? 'icon-control record-control active' : 'icon-control record-control'}
           onClick={props.onRecord}
-          aria-label={props.isRecording ? 'Stop Recording' : 'Record'}
+          aria-label={props.isRecording ? t('transport.stopRecording') : t('transport.record')}
           aria-pressed={props.isRecording}
-          title="Record computer keyboard (R)"
+          title={t('transport.recordTooltip')}
         >
           ●
         </button>
@@ -65,7 +80,7 @@ export function TransportBar(props: TransportBarProps) {
       </div>
 
       <div className="transport-settings">
-        <label className="compact-field">BPM
+        <label className="compact-field">{t('transport.bpm')}
           <input
             aria-label="BPM"
             type="number"
@@ -78,19 +93,43 @@ export function TransportBar(props: TransportBarProps) {
         <span className="time-signature-readout">{props.project.timeSignature.numerator}/{props.project.timeSignature.denominator} · {props.project.bpm} BPM</span>
         <label className="compact-field">KEY
           <select aria-label="Key" value={props.project.key} onChange={(event) => props.onKeyChange(event.target.value)}>
-            {KEYS.map((key) => <option key={key}>{key}</option>)}
+            {[...new Set([...KEYS, props.project.key])].map((key) => <option key={key}>{key}</option>)}
           </select>
         </label>
         <label className="compact-field">LENGTH
           <select aria-label="Project Length" value={props.project.projectLengthBeats} onChange={(event) => props.onProjectLengthChange(Number(event.target.value))}>
-            {[128, 256, 512].map((beats) => <option key={beats} value={beats}>{barsForBeats(beats, props.project.timeSignature)} bars</option>)}
+            {[...new Set([16, 32, 64, 128, 256, 512, 1024, props.project.projectLengthBeats])].sort((a, b) => a - b).map((beats) => <option key={beats} value={beats}>{barsForBeats(beats, props.project.timeSignature)} bars</option>)}
           </select>
         </label>
         <button className={props.metronome ? 'text-control active' : 'text-control'} onClick={() => props.onMetronomeChange(!props.metronome)} aria-pressed={props.metronome}>
-          <span aria-hidden="true">◉</span> Metronome
+          <span aria-hidden="true">◉</span> {t('transport.metronome')}
         </button>
-        <button className="save-button" onClick={props.onSave}>Save <span>{props.isDirty ? '•' : '✓'}</span></button>
+        <button className={props.project.loopEnabled ? 'text-control active' : 'text-control'} onClick={() => props.onLoopChange(!props.project.loopEnabled)} aria-pressed={props.project.loopEnabled}>LOOP</button>
+        <label className="compact-field loop-field">FROM<input aria-label="Loop Start" type="number" min="0" max={props.project.loopEndBeat - 0.25} step="0.25" value={props.project.loopStartBeat} onChange={(event) => props.onLoopStartChange(Number(event.target.value))} /></label>
+        <label className="compact-field loop-field">TO<input aria-label="Loop End" type="number" min={props.project.loopStartBeat + 0.25} max={props.project.projectLengthBeats} step="0.25" value={props.project.loopEndBeat} onChange={(event) => props.onLoopEndChange(Number(event.target.value))} /></label>
+        <button className="text-control project-file-button" onClick={props.onNew} disabled={props.busy}>New</button>
+        <button className="text-control project-file-button" onClick={props.onImport} disabled={props.busy}>Open</button>
+        <button className="text-control project-file-button" onClick={props.onSaveAs} disabled={props.busy}>Save As</button>
+        <button className="text-control project-file-button" onClick={props.onExport}>Export JSON</button>
+        <button className="text-control project-file-button" onClick={props.onUndo} disabled={!props.canUndo} title="Undo (⌘Z)">↶</button>
+        <button className="text-control project-file-button" onClick={props.onRedo} disabled={!props.canRedo} title="Redo (⇧⌘Z)">↷</button>
+        <button className="save-button" onClick={props.onSave} disabled={props.busy}>Save <span>{props.isDirty ? '•' : '✓'}</span></button>
       </div>
+      <label className="transport-seek-wrap" title={t('transport.seekHint')}>
+        <span>{t('transport.seek')}</span>
+        <input
+          className="transport-seek"
+          aria-label={t('transport.seek')}
+          aria-valuetext={`${barNumber} : ${beatNumber}`}
+          type="range"
+          min={props.project.loopEnabled ? props.project.loopStartBeat : 0}
+          max={props.project.loopEnabled ? props.project.loopEndBeat : props.project.projectLengthBeats}
+          step="0.01"
+          value={props.positionBeats}
+          onChange={(event) => props.onSeek(Number(event.target.value))}
+        />
+        <span>{barNumber} : {beatNumber}</span>
+      </label>
     </header>
   );
 }

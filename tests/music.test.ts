@@ -1,0 +1,83 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { beatsToSeconds, secondsToBeats, quantizeBeat, boundedNote, positionAt, schedulerRanges, recordedSegments, audibleNotes, trackEvents } from '../src/utils/musicMath';
+import { createDefaultProject } from '../src/project/defaultProject';
+import { ProjectStore, normalizeProject } from '../src/store/projectStore';
+import { pitchForCode } from '../src/instruments/keyboardMap';
+import { Sequencer } from '../src/sequencer/Sequencer';
+import { encodeAudioBufferToWav } from '../src/utils/projectFiles';
+import { AudioEngine } from '../src/audio/AudioEngine';
+
+const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-8, `${a} != ${b}`);
+const note = (id: string, start = 0, duration = 1) => ({ id, start, duration, pitch: 60, velocity: .8 });
+const loop = { loopEnabled: true, loopStartBeat: 4, loopEndBeat: 12, projectLengthBeats: 32 };
+function setup() { const project = createDefaultProject(); project.projectLengthBeats = 32; project.loopEndBeat = 32; project.bpm = 120; return { project, store: new ProjectStore(project), id: project.tracks[0]!.id }; }
+
+test('beat/second conversion round-trips non-integer tempi', () => { for (const bpm of [40, 87.3, 120, 174, 300]) near(secondsToBeats(beatsToSeconds(7.25, bpm), bpm), 7.25); });
+test('quantize handles off, ties, triplets and floating boundaries', () => { near(quantizeBeat(1.125, .25), 1.25); near(quantizeBeat(1.13, 0), 1.13); near(quantizeBeat(.99, 1 / 3), 1); near(quantizeBeat(.99999999999, .25), 1); });
+test('note bounds reject non-finite values and preserve duration bounds', () => { const n = boundedNote({ ...note('x'), start: 31.99, duration: 6, velocity: 3, pitch: 200 }, 32); near(n.duration + n.start, 32); assert.equal(n.velocity, 1); assert.equal(n.pitch, 127); assert.ok(Number.isFinite(boundedNote({ ...n, start: NaN }, 32).start)); });
+test('loop wraps exact and repeated boundaries', () => { assert.equal(positionAt(12, loop), 4); assert.equal(positionAt(28.5, loop), 4.5); assert.equal(positionAt(3, loop), 3); });
+test('scheduler ranges are half-open, contiguous, never duplicated', () => { assert.deepEqual(schedulerRanges(10, 14, loop), [{ from: 10, to: 12, absoluteFrom: 10 }, { from: 4, to: 6, absoluteFrom: 12 }]); near(schedulerRanges(9.3, 50.4, loop).reduce((n, r) => n + r.to - r.from, 0), 41.1); assert.deepEqual(schedulerRanges(12, 12, loop), []); });
+test('non-loop scheduling ends at project end', () => { assert.deepEqual(schedulerRanges(31, 40, { ...loop, loopEnabled: false }), [{ from: 31, to: 32, absoluteFrom: 31 }]); });
+test('recording held over multiple loop boundaries preserves each segment', () => { const r = recordedSegments(11, 22, loop, .25); assert.deepEqual(r, [{ start: 11, duration: 1 }, { start: 4, duration: 8 }, { start: 4, duration: 2 }]); });
+test('recording before the loop is not displaced to its start', () => { assert.deepEqual(recordedSegments(1, 2, loop, .25), [{ start: 1, duration: 1 }]); });
+test('short recording and project-end recording remain valid', () => { assert.ok(recordedSegments(2, 2.01, loop, .25)[0]!.duration > 0); const r = recordedSegments(31.9, 33, { ...loop, loopEnabled: false }, 0)[0]!; near(r.start + r.duration, 32); });
+test('schema 3 migration preserves legacy chromatic notes, mix, synths and Sections', () => { const { project } = setup(); project.schemaVersion = 3; project.tracks[0]!.notes = [note('legacy', 2.123, .031)]; project.sections = [{ id: 's', name: 'Bridge', startBeat: 4, durationBeats: 8, keyOverride: 'D major' }]; const result = normalizeProject(JSON.parse(JSON.stringify(project)))!; assert.equal(result.schemaVersion, 4); assert.deepEqual(result.tracks[0]!.notes[0], { ...project.tracks[0]!.notes[0], clipId: undefined }); assert.deepEqual(result.sections, project.sections); assert.deepEqual(result.synths, project.synths); });
+test('invalid and future project versions fail without destroying the current project', () => { const { store, project } = setup(); for (const json of ['null', '{bad', '{}', JSON.stringify({ ...project, schemaVersion: 99 })]) assert.equal(store.importJson(json), false); assert.equal(store.getSnapshot().project.id, project.id); });
+test('project serialization is stable after normalization', () => { const { project } = setup(); const a = normalizeProject(project)!; const b = normalizeProject(JSON.parse(JSON.stringify(a)))!; assert.deepEqual(b, a); });
+test('undo/redo groups a full drag and velocity gesture', () => { const { store, id } = setup(); store.addNote(id, note('n')); store.markSaved(); store.beginEdit(); store.updateNotes(id, { n: { start: 2 } }); store.updateNotes(id, { n: { start: 3, velocity: .3 } }); store.endEdit(); store.undo(); assert.equal(store.getSnapshot().project.tracks[0]!.notes[0]!.start, 0); assert.equal(store.getSnapshot().isDirty, false); store.redo(); assert.equal(store.getSnapshot().project.tracks[0]!.notes[0]!.start, 3); });
+test('redo is invalidated by a new edit; no-op note change leaves history alone', () => { const { store, id } = setup(); store.addNote(id, note('n')); store.updateNotes(id, { n: { start: 0 } }); store.undo(); assert.equal(store.getSnapshot().project.tracks[0]!.notes.length, 0); store.setBpm(130); assert.equal(store.canRedo(), false); });
+test('adding/deleting tracks supports undo, with a valid selection', () => { const { store } = setup(); store.addTrack(); const second = store.getSnapshot().selectedTrackId; store.deleteTrack(second); store.undo(); assert.ok(store.getSnapshot().project.tracks.some(t => t.id === second)); store.undo(); assert.equal(store.getSnapshot().project.tracks.length, 1); });
+test('snapshot save does not clear newer unsaved changes', () => { const { store } = setup(); const snapshot = store.getSnapshot().project; store.setBpm(140); store.markSaved(snapshot); assert.equal(store.getSnapshot().isDirty, true); });
+test('failed local storage write leaves the project dirty', () => { const { store } = setup(); store.setBpm(140); Object.defineProperty(globalThis, 'localStorage', { value: { setItem: () => { throw new Error('quota'); } }, configurable: true }); assert.equal(store.save(), false); assert.equal(store.getSnapshot().isDirty, true); });
+test('Open and New form history boundaries', () => { const { store, project } = setup(); store.setBpm(130); assert.equal(store.importJson(JSON.stringify(project)), true); assert.equal(store.canUndo(), false); store.setBpm(135); store.newProject(); assert.equal(store.canUndo(), false); });
+test('clip create adopts only existing unassigned notes in its range', () => { const { store, id } = setup(); store.addNotes(id, [note('a', 1), note('b', 5)]); store.addClip(id, { startBeat: 0, durationBeats: 4 }); const t = store.getSnapshot().project.tracks[0]!; assert.equal(t.notes[0]!.clipId, t.clips![0]!.id); assert.equal(t.notes[1]!.clipId, undefined); });
+test('moving and duplicating clips moves and copies their notes', () => { const { store, id } = setup(); store.addNote(id, note('a', 1)); store.addClip(id); const clipId = store.getSnapshot().selectedClipId!; store.updateClip(id, clipId, { startBeat: 8 }); assert.equal(store.getSnapshot().project.tracks[0]!.notes[0]!.start, 9); store.duplicateClip(id, clipId); const t = store.getSnapshot().project.tracks[0]!; assert.equal(t.notes.length, 2); assert.equal(t.notes[1]!.start, 13); assert.notEqual(t.notes[0]!.clipId, t.notes[1]!.clipId); });
+test('resizing clips crops playback without deleting source notes', () => { const { store, id } = setup(); store.addNote(id, note('a', 1, 3)); store.addClip(id); store.updateClip(id, store.getSnapshot().selectedClipId!, { durationBeats: 2 }); const t = store.getSnapshot().project.tracks[0]!; assert.equal(t.notes[0]!.duration, 3); assert.equal(audibleNotes(t)[0]!.duration, 1); });
+test('cross-track paste does not leave orphan clip IDs', () => { const { store, id } = setup(); store.addNote(id, note('a')); store.addClip(id); store.setSelectedNotes(['a']); store.copySelectedNotes(); store.addTrack(); store.pasteNotes(); const t = store.getSnapshot().project.tracks[1]!; assert.equal(t.notes[0]!.clipId, undefined); assert.equal(audibleNotes(t).length, 1); });
+test('chromatic mode stays unchanged; scale mode supports flats and section keys', () => { assert.equal(pitchForCode('KeyW', 4), 61); assert.equal(pitchForCode('KeyW', 4, 'scale', 'C minor'), 62); assert.equal(pitchForCode('KeyA', 4, 'scale', 'Bb major'), 70); assert.equal(pitchForCode('KeyA', 4, 'scale', 'D major'), 62); assert.equal(pitchForCode('KeyR', 4), null); });
+test('drum pattern and explicit hits use the same range scheduler', () => { const { project } = setup(); const track = project.tracks[0]!; track.type = 'drum'; track.notes = [{ ...note('d', 1), drumSound: 'snare' }]; track.drumPattern = { stepCount: 4, steps: { kick: [true, false, true, false], snare: [], 'closed-hat': [], 'open-hat': [], clap: [] } }; assert.equal(trackEvents(track, project, 0, 4).length, 3); assert.equal(trackEvents(track, project, 0, 1).length, 1); });
+test('track channel output passes through the volume gain before pan', () => { const engine = new AudioEngine(); const input = {} as GainNode; const panner = {} as StereoPannerNode; Object.assign(engine, { context: {}, channels: new Map([['t', { input, panner }]]) }); assert.equal((engine as any).getTrackOutput('t'), input); });
+
+function fakeAudio() { const a = { currentTime: 0, events: [] as Array<{ pitch: number; time: number; duration: number }>, stops: 0, resume: async () => {}, syncProject: () => {}, prepareInstruments: async () => {}, stopScheduled: () => { a.stops++; }, stopAll: () => {}, scheduleNote: (pitch: number, time: number, duration: number) => { a.events.push({ pitch, time, duration }); }, scheduleDrum: () => {}, scheduleMetronome: () => {} }; return a; }
+test('play from a stopped seek starts at the selected beat and chases sustained notes', async t => {
+  const { project } = setup(); project.loopEnabled = false;
+  project.tracks[0]!.notes = [note('before', 0), { ...note('held', 7, 3), pitch: 64 }, { ...note('at-start', 8), pitch: 67 }];
+  const audio = fakeAudio(); const seq = new Sequencer(() => project, audio); t.after(() => seq.stop());
+  seq.seek(8); assert.equal(seq.getStatus(), 'stopped'); assert.equal(audio.events.length, 0);
+  audio.currentTime = 10; await seq.play();
+  near(seq.getPositionBeat(), 8);
+  assert.deepEqual(audio.events, [{ pitch: 64, time: 10, duration: 1 }, { pitch: 67, time: 10, duration: .5 }]);
+  audio.currentTime = 10.5; seq.pump(); near(seq.getPositionBeat(), 9);
+});
+test('paused seek stays silent and resume uses the new playback start', async t => {
+  const { project } = setup(); project.loopEnabled = false; project.tracks[0]!.notes = [note('later', 12)];
+  const audio = fakeAudio(); const seq = new Sequencer(() => project, audio); t.after(() => seq.stop());
+  await seq.play(); audio.currentTime = 1; seq.pause(); seq.seek(12);
+  assert.equal(seq.getStatus(), 'paused'); assert.equal(audio.events.length, 0);
+  audio.currentTime = 4; await seq.play();
+  near(seq.getCurrentBeat(), 12); assert.deepEqual(audio.events, [{ pitch: 60, time: 4, duration: .5 }]);
+});
+test('seeking while playing replaces the schedule and continues from the new position', async t => {
+  const { project } = setup(); project.loopEnabled = false;
+  project.tracks[0]!.notes = [{ ...note('later', 16), pitch: 72 }];
+  const audio = fakeAudio(); const seq = new Sequencer(() => project, audio); t.after(() => seq.stop());
+  await seq.play(); audio.currentTime = 1; seq.seek(16);
+  assert.equal(seq.getStatus(), 'playing'); assert.equal(audio.stops, 1);
+  assert.deepEqual(audio.events, [{ pitch: 72, time: 1, duration: .5 }]);
+  seq.pump(); assert.equal(audio.events.length, 1);
+  audio.currentTime = 1.5; seq.pump(); near(seq.getPositionBeat(), 17);
+});
+test('loop seek is bounded and wraps at its end; non-loop seek clamps invalid input', async t => {
+  const { project } = setup(); Object.assign(project, loop);
+  const audio = fakeAudio(); const seq = new Sequencer(() => project, audio); t.after(() => seq.stop());
+  seq.seek(8); await seq.play(); near(seq.getPositionBeat(), 8);
+  seq.seek(12); near(seq.getPositionBeat(), 4); seq.seek(-2); near(seq.getPositionBeat(), 4);
+  seq.stop(); project.loopEnabled = false; seq.seek(99); near(seq.getPositionBeat(), 32);
+  seq.seek(NaN); near(seq.getPositionBeat(), 0);
+});
+test('sequencer does not jump early when lookahead crosses loop end', async t => { const { project } = setup(); Object.assign(project, { loopEnabled: true, loopStartBeat: 0, loopEndBeat: 4 }); project.tracks[0]!.notes = [note('a', 0), note('b', 3.9, .25)]; const audio = fakeAudio(); const seq = new Sequencer(() => project, audio); t.after(() => seq.stop()); await seq.play(); for (let i = 1; i <= 210; i++) { audio.currentTime = i * .01; seq.pump(); } assert.equal(audio.events.filter(n => n.pitch === 60 && n.time === 2).length, 1); near(seq.getCurrentBeat(), 4.2); near(seq.getPositionBeat(), .2); assert.equal(audio.stops, 0); near(audio.events.find(n => Math.abs(n.time - 1.95) < 1e-8)!.duration, .05); });
+test('seek cancels scheduled voices and notifies recorder before moving clock', async t => { const { project } = setup(); const audio = fakeAudio(); const seq = new Sequencer(() => project, audio); t.after(() => seq.stop()); await seq.play(); audio.currentTime = 1; let beat = -1; seq.onDiscontinuity(() => { beat = seq.getCurrentBeat(); }); seq.seek(8); assert.equal(beat, 2); assert.equal(seq.getCurrentBeat(), 8); assert.equal(audio.stops, 1); });
+test('stop during asynchronous preparation prevents late playback', async () => { const { project } = setup(); const audio = fakeAudio(); let resolve!: () => void; audio.prepareInstruments = () => new Promise<void>(r => { resolve = r; }); const seq = new Sequencer(() => project, audio); const pending = seq.play(); await Promise.resolve(); seq.stop(); resolve(); await pending; assert.equal(seq.getStatus(), 'stopped'); assert.equal(audio.events.length, 0); });
+test('editing BPM reanchors from the old tempo without a jump', async t => { let { project } = setup(); const audio = fakeAudio(); const seq = new Sequencer(() => project, audio); t.after(() => seq.stop()); await seq.play(); audio.currentTime = 1; project = { ...project, bpm: 240 }; seq.projectChanged(); near(seq.getCurrentBeat(), 2); audio.currentTime = 2; near(seq.getCurrentBeat(), 6); });
+test('WAV header and interleaved stereo PCM contain both channels', async () => { const audio = { length: 2, sampleRate: 44100, numberOfChannels: 2, getChannelData: (c: number) => new Float32Array(c ? [-1, .5] : [1, -.5]) } as AudioBuffer; const view = new DataView(await encodeAudioBufferToWav(audio).arrayBuffer()); assert.equal(view.getUint16(22, true), 2); assert.equal(view.getUint32(40, true), 8); assert.equal(view.getInt16(44, true), 32767); assert.equal(view.getInt16(46, true), -32768); });

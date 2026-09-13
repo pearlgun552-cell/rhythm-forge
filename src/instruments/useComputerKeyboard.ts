@@ -4,146 +4,72 @@ import { sequencer } from '../sequencer/transport';
 import { projectStore } from '../store/projectStore';
 import type { Track } from '../types/music';
 import { createId } from '../utils/id';
-import { GRID_BEATS } from '../utils/musicConstants';
+import { recordedSegments, type Loop } from '../utils/musicMath';
 import { pitchForCode } from './keyboardMap';
 
-interface ActiveKey {
-  pitch: number;
-  release: number;
-}
-
-interface PendingRecording {
-  pitch: number;
-  startBeat: number;
-  trackId: string;
-}
-
-export interface ComputerKeyboardState {
-  activePitches: Set<number>;
-  finishRecording: () => void;
-}
-
-function isEditableTarget(target: EventTarget | null): boolean {
-  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
-}
-
-function quantize(value: number): number {
-  return Math.round(value / GRID_BEATS) * GRID_BEATS;
-}
-
-export function useComputerKeyboard(
-  track: Track | undefined,
-  octave: number,
-  setOctave: (value: number) => void,
-  isRecording: boolean,
-): ComputerKeyboardState {
+interface ActiveKey { pitch: number; release: number; }
+interface PendingRecording { pitch: number; startBeat: number; trackId: string; loop: Loop; grid: number; clipId: string | null; }
+export interface ComputerKeyboardState { activePitches: Set<number>; finishRecording: () => void; }
+export function useComputerKeyboard(track: Track | undefined, octave: number, setOctave: (value: number) => void, isRecording: boolean, keyboardMode: 'chromatic' | 'scale' = 'chromatic'): ComputerKeyboardState {
   const [activePitches, setActivePitches] = useState<Set<number>>(new Set());
   const activeCodes = useRef(new Map<string, ActiveKey>());
-  const pendingRecordings = useRef(new Map<string, PendingRecording>());
-  const trackRef = useRef(track);
-  const octaveRef = useRef(octave);
-  const recordingRef = useRef(isRecording);
-  const setOctaveRef = useRef(setOctave);
-
-  trackRef.current = track;
-  octaveRef.current = octave;
-  recordingRef.current = isRecording;
-  setOctaveRef.current = setOctave;
-
+  const pending = useRef(new Map<string, PendingRecording>());
+  const settings = useRef({ track, octave, setOctave, isRecording, keyboardMode });
+  settings.current = { track, octave, setOctave, isRecording, keyboardMode };
   const commitRecording = useCallback((recording: PendingRecording, endBeat: number) => {
-    const projectLength = projectStore.getSnapshot().project.projectLengthBeats;
-    const start = Math.max(0, Math.min(projectLength - GRID_BEATS, quantize(recording.startBeat)));
-    const playedDuration = Math.max(GRID_BEATS, quantize(endBeat - recording.startBeat));
-    const duration = Math.min(playedDuration, projectLength - start);
-    projectStore.addNote(recording.trackId, {
-      id: createId('note'),
-      pitch: recording.pitch,
-      start,
-      duration,
-      velocity: 0.9,
-    });
+    const segments = recordedSegments(recording.startBeat, endBeat, recording.loop, recording.grid);
+    projectStore.addNotes(recording.trackId, segments.map(segment => ({ ...segment, id: createId('note'), pitch: recording.pitch, velocity: .9 })), recording.clipId);
   }, []);
-
   const finishRecording = useCallback(() => {
-    const endBeat = sequencer.getCurrentBeat();
-    pendingRecordings.current.forEach((recording) => commitRecording(recording, endBeat));
-    pendingRecordings.current.clear();
+    const end = sequencer.getCurrentBeat();
+    const recordings = [...pending.current.values()];
+    pending.current.clear();
+    recordings.forEach(recording => commitRecording(recording, end));
   }, [commitRecording]);
-
+  const releaseAll = useCallback(() => {
+    finishRecording();
+    activeCodes.current.forEach((key, code) => audioEngine.noteOff(`keyboard-${code}`, key.release));
+    activeCodes.current.clear(); setActivePitches(new Set());
+  }, [finishRecording]);
   useEffect(() => {
-    const releaseAll = () => {
-      const endBeat = sequencer.getCurrentBeat();
-      activeCodes.current.forEach((activeKey, code) => {
-        audioEngine.noteOff(`keyboard-${code}`, activeKey.release);
-        const recording = pendingRecordings.current.get(code);
-        if (recording) commitRecording(recording, endBeat);
-      });
-      activeCodes.current.clear();
-      pendingRecordings.current.clear();
-      setActivePitches(new Set());
-    };
-
     const onKeyDown = async (event: KeyboardEvent) => {
-      if (isEditableTarget(event.target) || event.metaKey || event.ctrlKey || event.altKey) return;
+      if ((event.target as HTMLElement)?.closest('input, textarea, select, [contenteditable="true"]') || event.metaKey || event.ctrlKey || event.altKey) return;
+      const current = settings.current;
       if (event.code === 'KeyZ' || event.code === 'KeyX') {
         if (event.repeat) return;
-        event.preventDefault();
-        releaseAll();
-        setOctaveRef.current(Math.max(1, Math.min(7, octaveRef.current + (event.code === 'KeyX' ? 1 : -1))));
-        return;
+        event.preventDefault(); releaseAll();
+        current.setOctave(Math.max(1, Math.min(7, current.octave + (event.code === 'KeyX' ? 1 : -1)))); return;
       }
-      const currentTrack = trackRef.current;
-      const pitch = pitchForCode(event.code, octaveRef.current);
-      if (pitch === null || !currentTrack || currentTrack.type !== 'instrument' || event.repeat || activeCodes.current.has(event.code)) return;
+      const { project, gridSnap, selectedClipId } = projectStore.getSnapshot();
+      const position = sequencer.getPositionBeat();
+      const section = project.sections.find(s => position >= s.startBeat && position < s.startBeat + s.durationBeats);
+      const pitch = pitchForCode(event.code, current.octave, current.keyboardMode, section?.keyOverride || project.key);
+      if (pitch === null || !current.track || current.track.type !== 'instrument' || event.repeat || activeCodes.current.has(event.code)) return;
       event.preventDefault();
-      activeCodes.current.set(event.code, { pitch, release: currentTrack.instrument.adsr.release });
-      setActivePitches(new Set(Array.from(activeCodes.current.values(), (activeKey) => activeKey.pitch)));
-      await audioEngine.resume();
-      await audioEngine.prepareInstrument(currentTrack.instrument);
-      if (!activeCodes.current.has(event.code)) return;
-      if (recordingRef.current) {
-        pendingRecordings.current.set(event.code, {
-          pitch,
-          startBeat: sequencer.getCurrentBeat(),
-          trackId: currentTrack.id,
-        });
-      }
-      audioEngine.noteOn(`keyboard-${event.code}`, pitch, currentTrack.instrument, {
-        velocity: 0.9,
-        trackVolume: currentTrack.volume,
-        pan: currentTrack.pan,
-        trackId: currentTrack.id,
-      });
+      const active = { pitch, release: current.track.instrument.adsr.release };
+      activeCodes.current.set(event.code, active);
+      setActivePitches(new Set([...activeCodes.current.values()].map(key => key.pitch)));
+      if (current.isRecording) pending.current.set(event.code, { pitch, startBeat: sequencer.getCurrentBeat(), trackId: current.track.id, loop: { ...project }, grid: gridSnap, clipId: selectedClipId ?? null });
+      try {
+        await audioEngine.resume(); await audioEngine.prepareInstrument(current.track.instrument);
+        if (activeCodes.current.get(event.code) !== active) return;
+        audioEngine.noteOn(`keyboard-${event.code}`, pitch, current.track.instrument, { velocity: .9, trackId: current.track.id });
+      } catch (error) { console.error('Keyboard instrument failed', error); releaseAll(); }
     };
-
     const onKeyUp = (event: KeyboardEvent) => {
-      const activeKey = activeCodes.current.get(event.code);
-      if (!activeKey) return;
-      event.preventDefault();
-      audioEngine.noteOff(`keyboard-${event.code}`, activeKey.release);
-      activeCodes.current.delete(event.code);
-      setActivePitches(new Set(Array.from(activeCodes.current.values(), (key) => key.pitch)));
-      const recording = pendingRecordings.current.get(event.code);
-      if (recording) {
-        commitRecording(recording, sequencer.getCurrentBeat());
-        pendingRecordings.current.delete(event.code);
-      }
+      const active = activeCodes.current.get(event.code);
+      if (!active) return;
+      event.preventDefault(); audioEngine.noteOff(`keyboard-${event.code}`, active.release); activeCodes.current.delete(event.code);
+      setActivePitches(new Set([...activeCodes.current.values()].map(key => key.pitch)));
+      const recording = pending.current.get(event.code);
+      pending.current.delete(event.code);
+      if (recording) commitRecording(recording, sequencer.getCurrentBeat());
     };
-
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
-    window.addEventListener('blur', releaseAll);
-    return () => {
-      releaseAll();
-      window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('keyup', onKeyUp);
-      window.removeEventListener('blur', releaseAll);
-    };
-  }, [commitRecording]);
-
-  useEffect(() => {
-    if (!isRecording) finishRecording();
-  }, [finishRecording, isRecording]);
-
+    const off = sequencer.onDiscontinuity(releaseAll);
+    window.addEventListener('keydown', onKeyDown); window.addEventListener('keyup', onKeyUp); window.addEventListener('blur', releaseAll);
+    return () => { releaseAll(); off(); window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); window.removeEventListener('blur', releaseAll); };
+  }, [commitRecording, releaseAll]);
+  useEffect(() => { releaseAll(); }, [track?.id, octave, keyboardMode, releaseAll]);
+  useEffect(() => { if (!isRecording) finishRecording(); }, [isRecording, finishRecording]);
   return { activePitches, finishRecording };
 }
