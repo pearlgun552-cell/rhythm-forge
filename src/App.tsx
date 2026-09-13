@@ -133,6 +133,8 @@ export default function App() {
     projectStore.setBpm(bpm);
   };
 
+  const seekTransport = useCallback((beat: number) => sequencer.seek(beat), []);
+
   const deleteTrack = useCallback((trackId: string) => {
     if (transport.status !== 'stopped') sequencer.stop();
     else audioEngine.stopAll();
@@ -184,6 +186,9 @@ export default function App() {
         onRedo={() => projectStore.redo()}
         canUndo={projectStore.canUndo()}
         canRedo={projectStore.canRedo()}
+        onLoopChange={(enabled) => projectStore.setLoop({ loopEnabled: enabled })}
+        onLoopStartChange={(beat) => projectStore.setLoop({ loopStartBeat: beat })}
+        onLoopEndChange={(beat) => projectStore.setLoop({ loopEndBeat: beat })}
       />
       <input
         ref={importInputRef}
@@ -211,6 +216,7 @@ export default function App() {
           selectedNoteIds={selectedNoteIds}
           activePitches={activePitches}
           positionBeats={transport.positionBeats}
+          onSeek={seekTransport}
         />
         <InstrumentPanel
           track={selectedTrack}

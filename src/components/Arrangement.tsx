@@ -8,6 +8,7 @@ interface ArrangementProps {
   project: Project;
   tracks: Track[];
   selectedTrackId: string;
+  onSeek?: (beat: number) => void;
 }
 
 const SECTION_KEYS = ['', 'A major', 'E major', 'F# minor', 'D major', 'C major', 'C minor'];
@@ -17,7 +18,7 @@ function ArrangementPlayhead({ project }: { project: Project }) {
   return <div className="arrangement-playhead" style={{ left: `calc(88px + (100% - 88px) * ${positionBeats / project.projectLengthBeats})` }} />;
 }
 
-export const Arrangement = memo(function Arrangement({ project, tracks, selectedTrackId }: ArrangementProps) {
+export const Arrangement = memo(function Arrangement({ project, tracks, selectedTrackId, onSeek }: ArrangementProps) {
   const bars = barsForBeats(project.projectLengthBeats, project.timeSignature);
   const barBeats = beatsPerBar(project.timeSignature);
   return (
@@ -58,7 +59,11 @@ export const Arrangement = memo(function Arrangement({ project, tracks, selected
           </div>
         ))}
       </div>
-      <div className="arrangement-body">
+      <div className="arrangement-body" onPointerDown={(event) => {
+        if (!onSeek || event.target !== event.currentTarget) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        onSeek(Math.max(0, Math.min(project.projectLengthBeats, ((event.clientX - rect.left - 88) / Math.max(1, rect.width - 88)) * project.projectLengthBeats)));
+      }}>
         <ArrangementPlayhead project={project} />
         {tracks.map((track) => (
           <div className={track.id === selectedTrackId ? 'arrangement-lane selected' : 'arrangement-lane'} key={track.id}>

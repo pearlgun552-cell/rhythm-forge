@@ -87,6 +87,9 @@ export interface Project {
   key: string;
   timeSignature: TimeSignature;
   projectLengthBeats: number;
+  loopEnabled: boolean;
+  loopStartBeat: number;
+  loopEndBeat: number;
   tracks: Track[];
   synths: SynthPreset[];
   sections: Section[];

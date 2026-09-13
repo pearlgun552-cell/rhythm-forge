@@ -37,6 +37,22 @@ export class Sequencer {
     this.metronomeEnabled = enabled;
   }
 
+  seek(beat: number): void {
+    const project = this.getProject();
+    const start = project.loopEnabled ? project.loopStartBeat : 0;
+    const end = project.loopEnabled ? project.loopEndBeat : project.projectLengthBeats;
+    const next = Math.max(start, Math.min(end, beat));
+    this.positionBeats = next;
+    this.anchorBeat = next;
+    this.anchorTime = audioEngine.currentTime;
+    this.scheduleCursorBeat = next;
+    if (this.status === 'playing') {
+      audioEngine.stopScheduled();
+      this.scheduleAhead();
+    }
+    this.emit();
+  }
+
   getCurrentBeat(): number {
     return this.currentAbsoluteBeat();
   }
@@ -98,8 +114,16 @@ export class Sequencer {
     const project = this.getProject();
     const beatsPerSecond = project.bpm / 60;
     const rangeStart = this.scheduleCursorBeat;
+    if (project.loopEnabled && rangeStart >= project.loopEndBeat - 0.0001) {
+      audioEngine.stopScheduled();
+      this.positionBeats = project.loopStartBeat;
+      this.anchorBeat = project.loopStartBeat;
+      this.anchorTime = audioEngine.currentTime;
+      this.scheduleCursorBeat = project.loopStartBeat;
+      return this.scheduleAhead();
+    }
     const rangeEnd = Math.min(
-      project.projectLengthBeats,
+      project.loopEnabled ? project.loopEndBeat : project.projectLengthBeats,
       Math.max(rangeStart, this.currentAbsoluteBeat() + LOOKAHEAD_SECONDS * beatsPerSecond),
     );
     const anySolo = project.tracks.some((track) => track.solo);
@@ -159,7 +183,15 @@ export class Sequencer {
     if (this.status !== 'playing') return;
     const project = this.getProject();
     this.positionBeats = Math.min(project.projectLengthBeats, this.currentAbsoluteBeat());
-    if (this.positionBeats >= project.projectLengthBeats) {
+    const end = project.loopEnabled ? project.loopEndBeat : project.projectLengthBeats;
+    if (this.positionBeats >= end) {
+      if (project.loopEnabled) {
+        this.scheduleCursorBeat = project.loopEndBeat;
+        this.scheduleAhead();
+        this.emit();
+        this.animationFrame = requestAnimationFrame(this.tickUi);
+        return;
+      }
       this.clearTimers();
       this.status = 'stopped';
       this.emit();

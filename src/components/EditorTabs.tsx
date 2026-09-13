@@ -13,6 +13,7 @@ interface EditorTabsProps {
   selectedNoteIds: string[];
   activePitches: Set<number>;
   positionBeats: number;
+  onSeek?: (beat: number) => void;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -28,6 +29,7 @@ export function EditorTabs({
   selectedNoteIds,
   activePitches,
   positionBeats,
+  onSeek,
 }: EditorTabsProps) {
   const { t } = useLanguage();
   // Each tab is an independent toggle. Both start visible so the two views
@@ -88,7 +90,7 @@ export function EditorTabs({
       <div className={`editor-canvas ${bothVisible ? 'split' : ''}`} ref={canvasRef}>
         {!neitherVisible && arrangementVisible && (
           <div className="editor-panel arrangement-panel" style={bothVisible ? { flexBasis: `${ratio * 100}%` } : undefined}>
-            <Arrangement project={project} tracks={tracks} selectedTrackId={selectedTrackId} />
+            <Arrangement project={project} tracks={tracks} selectedTrackId={selectedTrackId} onSeek={onSeek} />
           </div>
         )}
         {bothVisible && <div className="editor-divider" role="separator" aria-orientation="vertical" onPointerDown={startSplitterDrag} />}

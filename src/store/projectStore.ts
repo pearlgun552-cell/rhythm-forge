@@ -59,6 +59,8 @@ function normalizeProject(raw: Partial<Project>): Project | null {
     } as Track;
   });
   const projectLengthBeats = clamp(Number(raw.projectLengthBeats ?? DEFAULT_PROJECT_LENGTH_BEATS), 128, 512);
+  const loopStartBeat = clamp(Number(raw.loopStartBeat ?? 0), 0, projectLengthBeats - 0.25);
+  const loopEndBeat = clamp(Number(raw.loopEndBeat ?? projectLengthBeats), loopStartBeat + 0.25, projectLengthBeats);
   const synths = Array.isArray(raw.synths) && raw.synths.length > 0
     ? raw.synths.map((rawSynth) => ({
       ...createSynth('My Synth'),
@@ -78,6 +80,9 @@ function normalizeProject(raw: Partial<Project>): Project | null {
       denominator: Number(raw.timeSignature?.denominator ?? DEFAULT_TIME_SIGNATURE.denominator),
     },
     projectLengthBeats,
+    loopEnabled: Boolean(raw.loopEnabled),
+    loopStartBeat,
+    loopEndBeat,
     tracks,
     synths,
     sections: Array.isArray(raw.sections) ? raw.sections.map((section) => ({
@@ -208,7 +213,18 @@ class ProjectStore {
   }
 
   setProjectLengthBeats(projectLengthBeats: number): void {
-    this.updateProject((project) => ({ ...project, projectLengthBeats: clamp(projectLengthBeats, 128, 512) }));
+    this.updateProject((project) => {
+      const length = clamp(projectLengthBeats, 128, 512);
+      return { ...project, projectLengthBeats: length, loopEndBeat: Math.min(project.loopEndBeat, length), loopStartBeat: Math.min(project.loopStartBeat, Math.max(0, length - 0.25)) };
+    });
+  }
+
+  setLoop(changes: Partial<Pick<Project, 'loopEnabled' | 'loopStartBeat' | 'loopEndBeat'>>): void {
+    this.updateProject((project) => {
+      const start = clamp(Number(changes.loopStartBeat ?? project.loopStartBeat), 0, project.projectLengthBeats - 0.25);
+      const end = clamp(Number(changes.loopEndBeat ?? project.loopEndBeat), start + 0.25, project.projectLengthBeats);
+      return { ...project, loopEnabled: changes.loopEnabled ?? project.loopEnabled, loopStartBeat: start, loopEndBeat: end };
+    });
   }
 
   setReverb(changes: Partial<Project['reverb']>): void {
@@ -349,6 +365,23 @@ class ProjectStore {
         }
         : track),
     }));
+  }
+
+  setNoteVelocities(trackId: string, changes: Record<string, number>): void {
+    this.updateNotes(trackId, Object.fromEntries(Object.entries(changes).map(([id, velocity]) => [id, {
+      velocity: clamp(Number(velocity), 0.01, 1),
+    }])));
+  }
+
+  quantizeSelectedNotes(subdivision: number): void {
+    const trackId = this.state.selectedTrackId;
+    const ids = new Set(this.state.selectedNoteIds);
+    if (ids.size === 0 || subdivision <= 0) return;
+    const track = this.state.project.tracks.find((item) => item.id === trackId);
+    if (!track) return;
+    this.updateNotes(trackId, Object.fromEntries(track.notes.filter((note) => ids.has(note.id)).map((note) => [note.id, {
+      start: snapBeat(note.start, subdivision),
+    }])));
   }
 
   selectNote(noteId: string | null, additive = false): void {

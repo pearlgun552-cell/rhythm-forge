@@ -26,6 +26,9 @@ interface TransportBarProps {
   onRedo: () => void;
   canUndo: boolean;
   canRedo: boolean;
+  onLoopChange: (enabled: boolean) => void;
+  onLoopStartChange: (beat: number) => void;
+  onLoopEndChange: (beat: number) => void;
 }
 
 const KEYS = [
@@ -97,6 +100,9 @@ export function TransportBar(props: TransportBarProps) {
         <button className={props.metronome ? 'text-control active' : 'text-control'} onClick={() => props.onMetronomeChange(!props.metronome)} aria-pressed={props.metronome}>
           <span aria-hidden="true">◉</span> {t('transport.metronome')}
         </button>
+        <button className={props.project.loopEnabled ? 'text-control active' : 'text-control'} onClick={() => props.onLoopChange(!props.project.loopEnabled)} aria-pressed={props.project.loopEnabled}>LOOP</button>
+        <label className="compact-field loop-field">FROM<input aria-label="Loop Start" type="number" min="0" max={props.project.loopEndBeat - 0.25} step="0.25" value={props.project.loopStartBeat} onChange={(event) => props.onLoopStartChange(Number(event.target.value))} /></label>
+        <label className="compact-field loop-field">TO<input aria-label="Loop End" type="number" min={props.project.loopStartBeat + 0.25} max={props.project.projectLengthBeats} step="0.25" value={props.project.loopEndBeat} onChange={(event) => props.onLoopEndChange(Number(event.target.value))} /></label>
         <button className="text-control project-file-button" onClick={props.onImport}>Import</button>
         <button className="text-control project-file-button" onClick={props.onExport}>Export</button>
         <button className="text-control project-file-button" onClick={props.onUndo} disabled={!props.canUndo} title="Undo (⌘Z)">↶</button>

@@ -45,6 +45,11 @@ interface SelectionBox {
   endY: number;
 }
 
+interface VelocityInteraction {
+  noteId: string;
+  pointerId: number;
+}
+
 function RollPlayhead({ projectLengthBeats }: { projectLengthBeats: number }) {
   const { positionBeats } = useTransport();
   return <div className="roll-playhead" style={{ left: Math.min(projectLengthBeats, positionBeats) * BEAT_WIDTH }} />;
@@ -68,6 +73,7 @@ export const PianoRoll = memo(function PianoRoll({ track, selectedNoteId, select
   const [snapBeats, setSnapBeats] = useState(0.25);
   const [noteLength, setNoteLength] = useState(0.5);
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
+  const [velocityInteraction, setVelocityInteraction] = useState<VelocityInteraction | null>(null);
   const projectLengthBeats = project.projectLengthBeats;
   const gridWidth = projectLengthBeats * BEAT_WIDTH;
   const barBeats = beatsPerBar(project.timeSignature);
@@ -184,6 +190,29 @@ export const PianoRoll = memo(function PianoRoll({ track, selectedNoteId, select
     interactionRef.current = null;
   };
 
+  const updateVelocityFromPointer = (event: ReactPointerEvent<HTMLDivElement>, noteId: string) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const velocity = Math.max(0.01, Math.min(1, 1 - (event.clientY - rect.top) / rect.height));
+    projectStore.setNoteVelocities(track?.id ?? '', { [noteId]: velocity });
+  };
+
+  const beginVelocity = (event: ReactPointerEvent<HTMLDivElement>, note: Note) => {
+    if (!track || event.button !== 0) return;
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setVelocityInteraction({ noteId: note.id, pointerId: event.pointerId });
+    updateVelocityFromPointer(event, note.id);
+  };
+
+  const moveVelocity = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!velocityInteraction || velocityInteraction.pointerId !== event.pointerId) return;
+    updateVelocityFromPointer(event, velocityInteraction.noteId);
+  };
+
+  const endVelocity = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (velocityInteraction?.pointerId === event.pointerId) setVelocityInteraction(null);
+  };
+
   return (
     <section className="piano-roll panel">
       <div className="piano-roll-toolbar">
@@ -191,6 +220,7 @@ export const PianoRoll = memo(function PianoRoll({ track, selectedNoteId, select
         <div className="roll-tools">
           <label>SNAP <select aria-label="Grid Snap" value={snapBeats} onChange={(event) => setSnapBeats(Number(event.target.value))}>{SNAP_OPTIONS.map((option) => <option key={option.beats} value={option.beats}>{option.label}</option>)}</select></label>
           <label>LENGTH <select aria-label="Note Length" value={noteLength} onChange={(event) => setNoteLength(Number(event.target.value))}>{[0.25, 0.5, 1, 2, barBeats].map((length) => <option key={length} value={length}>{length === barBeats ? '1 Bar' : `${length} beat${length === 1 ? '' : 's'}`}</option>)}</select></label>
+          <button className="quantize-button" type="button" onClick={() => projectStore.quantizeSelectedNotes(snapBeats)} disabled={selectedNoteIds.length === 0}>QUANTIZE</button>
           <span className="roll-legend"><i className="legend-note" /> Shift-click / drag select · drag note to move · edge to resize</span>
           <b>{bars} BARS · {project.timeSignature.numerator}/{project.timeSignature.denominator}</b>
         </div>
@@ -226,6 +256,18 @@ export const PianoRoll = memo(function PianoRoll({ track, selectedNoteId, select
                 {noteName(note.pitch)}
                 <div className="note-resize-handle" onPointerDown={(event) => beginResize(event, note)} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} aria-label={`Resize ${noteName(note.pitch)}`} />
               </button>
+            ))}
+          </div>
+          <div className="velocity-lane" onPointerMove={moveVelocity} onPointerUp={endVelocity}>
+            <div className="velocity-lane-label">VELOCITY</div>
+            {track?.notes.map((note) => (
+              <div
+                key={`velocity-${note.id}`}
+                className={selectedNoteIds.includes(note.id) ? 'velocity-bar selected' : 'velocity-bar'}
+                style={{ left: note.start * BEAT_WIDTH + 1, width: Math.max(8, note.duration * BEAT_WIDTH - 2), height: `${Math.max(4, note.velocity * 100)}%` }}
+                onPointerDown={(event) => beginVelocity(event, note)}
+                aria-label={`${noteName(note.pitch)} velocity ${Math.round(note.velocity * 100)}`}
+              />
             ))}
           </div>
         </div>
