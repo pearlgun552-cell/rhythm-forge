@@ -40,6 +40,42 @@ test('drum pattern and explicit hits use the same range scheduler', () => { cons
 test('track channel output passes through the volume gain before pan', () => { const engine = new AudioEngine(); const input = {} as GainNode; const panner = {} as StereoPannerNode; Object.assign(engine, { context: {}, channels: new Map([['t', { input, panner }]]) }); assert.equal((engine as any).getTrackOutput('t'), input); });
 
 function fakeAudio() { const a = { currentTime: 0, events: [] as Array<{ pitch: number; time: number; duration: number }>, stops: 0, resume: async () => {}, syncProject: () => {}, prepareInstruments: async () => {}, stopScheduled: () => { a.stops++; }, stopAll: () => {}, scheduleNote: (pitch: number, time: number, duration: number) => { a.events.push({ pitch, time, duration }); }, scheduleDrum: () => {}, scheduleMetronome: () => {} }; return a; }
+test('play from a stopped seek starts at the selected beat and chases sustained notes', async t => {
+  const { project } = setup(); project.loopEnabled = false;
+  project.tracks[0]!.notes = [note('before', 0), { ...note('held', 7, 3), pitch: 64 }, { ...note('at-start', 8), pitch: 67 }];
+  const audio = fakeAudio(); const seq = new Sequencer(() => project, audio); t.after(() => seq.stop());
+  seq.seek(8); assert.equal(seq.getStatus(), 'stopped'); assert.equal(audio.events.length, 0);
+  audio.currentTime = 10; await seq.play();
+  near(seq.getPositionBeat(), 8);
+  assert.deepEqual(audio.events, [{ pitch: 64, time: 10, duration: 1 }, { pitch: 67, time: 10, duration: .5 }]);
+  audio.currentTime = 10.5; seq.pump(); near(seq.getPositionBeat(), 9);
+});
+test('paused seek stays silent and resume uses the new playback start', async t => {
+  const { project } = setup(); project.loopEnabled = false; project.tracks[0]!.notes = [note('later', 12)];
+  const audio = fakeAudio(); const seq = new Sequencer(() => project, audio); t.after(() => seq.stop());
+  await seq.play(); audio.currentTime = 1; seq.pause(); seq.seek(12);
+  assert.equal(seq.getStatus(), 'paused'); assert.equal(audio.events.length, 0);
+  audio.currentTime = 4; await seq.play();
+  near(seq.getCurrentBeat(), 12); assert.deepEqual(audio.events, [{ pitch: 60, time: 4, duration: .5 }]);
+});
+test('seeking while playing replaces the schedule and continues from the new position', async t => {
+  const { project } = setup(); project.loopEnabled = false;
+  project.tracks[0]!.notes = [{ ...note('later', 16), pitch: 72 }];
+  const audio = fakeAudio(); const seq = new Sequencer(() => project, audio); t.after(() => seq.stop());
+  await seq.play(); audio.currentTime = 1; seq.seek(16);
+  assert.equal(seq.getStatus(), 'playing'); assert.equal(audio.stops, 1);
+  assert.deepEqual(audio.events, [{ pitch: 72, time: 1, duration: .5 }]);
+  seq.pump(); assert.equal(audio.events.length, 1);
+  audio.currentTime = 1.5; seq.pump(); near(seq.getPositionBeat(), 17);
+});
+test('loop seek is bounded and wraps at its end; non-loop seek clamps invalid input', async t => {
+  const { project } = setup(); Object.assign(project, loop);
+  const audio = fakeAudio(); const seq = new Sequencer(() => project, audio); t.after(() => seq.stop());
+  seq.seek(8); await seq.play(); near(seq.getPositionBeat(), 8);
+  seq.seek(12); near(seq.getPositionBeat(), 4); seq.seek(-2); near(seq.getPositionBeat(), 4);
+  seq.stop(); project.loopEnabled = false; seq.seek(99); near(seq.getPositionBeat(), 32);
+  seq.seek(NaN); near(seq.getPositionBeat(), 0);
+});
 test('sequencer does not jump early when lookahead crosses loop end', async t => { const { project } = setup(); Object.assign(project, { loopEnabled: true, loopStartBeat: 0, loopEndBeat: 4 }); project.tracks[0]!.notes = [note('a', 0), note('b', 3.9, .25)]; const audio = fakeAudio(); const seq = new Sequencer(() => project, audio); t.after(() => seq.stop()); await seq.play(); for (let i = 1; i <= 210; i++) { audio.currentTime = i * .01; seq.pump(); } assert.equal(audio.events.filter(n => n.pitch === 60 && n.time === 2).length, 1); near(seq.getCurrentBeat(), 4.2); near(seq.getPositionBeat(), .2); assert.equal(audio.stops, 0); near(audio.events.find(n => Math.abs(n.time - 1.95) < 1e-8)!.duration, .05); });
 test('seek cancels scheduled voices and notifies recorder before moving clock', async t => { const { project } = setup(); const audio = fakeAudio(); const seq = new Sequencer(() => project, audio); t.after(() => seq.stop()); await seq.play(); audio.currentTime = 1; let beat = -1; seq.onDiscontinuity(() => { beat = seq.getCurrentBeat(); }); seq.seek(8); assert.equal(beat, 2); assert.equal(seq.getCurrentBeat(), 8); assert.equal(audio.stops, 1); });
 test('stop during asynchronous preparation prevents late playback', async () => { const { project } = setup(); const audio = fakeAudio(); let resolve!: () => void; audio.prepareInstruments = () => new Promise<void>(r => { resolve = r; }); const seq = new Sequencer(() => project, audio); const pending = seq.play(); await Promise.resolve(); seq.stop(); resolve(); await pending; assert.equal(seq.getStatus(), 'stopped'); assert.equal(audio.events.length, 0); });

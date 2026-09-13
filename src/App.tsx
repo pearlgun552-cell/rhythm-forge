@@ -194,7 +194,6 @@ export default function App() {
   };
 
   const changeBpm = (bpm: number) => {
-    if (transport.status !== 'stopped') stopTransport();
     projectStore.setBpm(bpm);
   };
 
@@ -233,6 +232,7 @@ export default function App() {
         onPlay={() => { void sequencer.play().catch(error => setNotice(String(error))); }}
         onPause={pauseTransport}
         onStop={stopTransport}
+        onSeek={seekTransport}
         onRecord={toggleRecording}
         onMetronomeChange={toggleMetronome}
         onSave={() => { void saveProject(); }}

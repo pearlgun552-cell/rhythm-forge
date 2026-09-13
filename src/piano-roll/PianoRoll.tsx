@@ -9,6 +9,7 @@ import type { Note, Section, Track } from '../types/music';
 import { scalePitchClasses } from '../utils/musicTheory';
 import { barsForBeats, beatsPerBar, snapBeat } from '../utils/musicConstants';
 import { createId } from '../utils/id';
+import { useLanguage } from '../i18n';
 
 const PITCH_MIN = 0;
 const PITCH_MAX = 127;
@@ -29,6 +30,7 @@ interface PianoRollProps {
   selectedNoteId: string | null;
   selectedNoteIds: string[];
   activePitches: Set<number>;
+  onSeek?: (beat: number) => void;
 }
 
 interface MoveInteraction {
@@ -69,7 +71,8 @@ function ScaleGuide({ projectLengthBeats, keyName, sections }: { projectLengthBe
   );
 }
 
-export const PianoRoll = memo(function PianoRoll({ track, selectedNoteId, selectedNoteIds, activePitches }: PianoRollProps) {
+export const PianoRoll = memo(function PianoRoll({ track, selectedNoteId, selectedNoteIds, activePitches, onSeek }: PianoRollProps) {
+  const { t } = useLanguage();
   const { project, gridSnap: snapBeats, selectedClipId } = useProjectStore();
   const scrollRef = useRef<HTMLDivElement>(null);
   const clip = track?.clips?.find(c => c.id === selectedClipId);
@@ -251,7 +254,23 @@ export const PianoRoll = memo(function PianoRoll({ track, selectedNoteId, select
           {PITCHES.map((pitch) => <div className={`${isBlackKey(pitch) ? 'piano-key black' : 'piano-key'} ${activePitches.has(pitch) ? 'active' : ''}`} key={pitch}><span>{noteName(pitch)}</span></div>)}
         </div>
         <div className="roll-content" style={{ width: gridWidth }}>
-          <div className="beat-ruler">{Array.from({ length: bars }, (_, bar) => <span key={bar} style={{ width: barBeats * BEAT_WIDTH }}>{bar + 1}</span>)}</div>
+          <div
+            className="beat-ruler"
+            title={t('transport.seekHint')}
+            onPointerDown={(event) => {
+              if (event.button !== 0) return;
+              event.preventDefault();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              onSeek?.(snapBeat(Math.max(0, Math.min(projectLengthBeats, (event.clientX - event.currentTarget.getBoundingClientRect().left) / BEAT_WIDTH)), snapBeats));
+            }}
+            onPointerMove={(event) => {
+              if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+              onSeek?.(snapBeat(Math.max(0, Math.min(projectLengthBeats, (event.clientX - event.currentTarget.getBoundingClientRect().left) / BEAT_WIDTH)), snapBeats));
+            }}
+            onPointerUp={(event) => {
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+            }}
+          >{Array.from({ length: bars }, (_, bar) => <span key={bar} style={{ width: barBeats * BEAT_WIDTH }}>{bar + 1}</span>)}</div>
           <div
             ref={gridRef}
             className="note-grid"

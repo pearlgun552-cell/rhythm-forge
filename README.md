@@ -72,6 +72,8 @@ npm run package:mac
 
 ## 操作
 
+- 顶部“播放位置 / Playback position”横条：点击或拖动选择起点，再按播放；暂停时可重新定位，播放中可直接跳转。循环开启时定位范围为 FROM–TO。
+- Piano Roll 上方小节尺：点击或拖动定位（遵循当前 SNAP）；Arrangement 的小节尺也可点击定位。暂停保留位置，停止回到开头；修改 BPM 保留当前播放位置。
 - `A W S E D F T G Y H U J K`：演奏当前音轨的 Synth
 - `R` 或顶部红色 `●`：开始 / 结束电脑键盘录音；录音会自动播放 Transport，并把按键时值按 1/16 拍写入当前音轨
 - `Z / X`：降低 / 升高八度

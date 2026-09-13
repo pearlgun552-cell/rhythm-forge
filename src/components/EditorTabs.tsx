@@ -96,7 +96,7 @@ export function EditorTabs({
         {bothVisible && <div className="editor-divider" role="separator" aria-orientation="vertical" onPointerDown={startSplitterDrag} />}
         {!neitherVisible && pianoVisible && (
           <div className="editor-panel piano-panel">
-            <PianoRoll track={selectedTrack} selectedNoteId={selectedNoteId} selectedNoteIds={selectedNoteIds} activePitches={activePitches} />
+            <PianoRoll track={selectedTrack} selectedNoteId={selectedNoteId} selectedNoteIds={selectedNoteIds} activePitches={activePitches} onSeek={onSeek} />
           </div>
         )}
         {neitherVisible && (

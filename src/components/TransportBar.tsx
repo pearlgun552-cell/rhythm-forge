@@ -17,6 +17,7 @@ interface TransportBarProps {
   onPlay: () => void;
   onPause: () => void;
   onStop: () => void;
+  onSeek: (beat: number) => void;
   onRecord: () => void;
   onMetronomeChange: (enabled: boolean) => void;
   onSave: () => void;
@@ -114,6 +115,21 @@ export function TransportBar(props: TransportBarProps) {
         <button className="text-control project-file-button" onClick={props.onRedo} disabled={!props.canRedo} title="Redo (⇧⌘Z)">↷</button>
         <button className="save-button" onClick={props.onSave} disabled={props.busy}>Save <span>{props.isDirty ? '•' : '✓'}</span></button>
       </div>
+      <label className="transport-seek-wrap" title={t('transport.seekHint')}>
+        <span>{t('transport.seek')}</span>
+        <input
+          className="transport-seek"
+          aria-label={t('transport.seek')}
+          aria-valuetext={`${barNumber} : ${beatNumber}`}
+          type="range"
+          min={props.project.loopEnabled ? props.project.loopStartBeat : 0}
+          max={props.project.loopEnabled ? props.project.loopEndBeat : props.project.projectLengthBeats}
+          step="0.01"
+          value={props.positionBeats}
+          onChange={(event) => props.onSeek(Number(event.target.value))}
+        />
+        <span>{barNumber} : {beatNumber}</span>
+      </label>
     </header>
   );
 }

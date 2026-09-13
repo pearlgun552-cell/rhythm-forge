@@ -222,3 +222,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .editor-canvas { flex:1 1 auto; }.velocity-lane { position:sticky; bottom:0; z-index:6; min-height:76px; }
 .drum-hit-editor { margin-top:22px; color:#93a8c4; font-size:10px; }
 .drum-hit-row { display:flex; align-items:center; gap:8px; margin:5px 0; }.drum-hit-row input { width:84px; }.drum-hit-editor input, .drum-hit-editor button, .drum-hit-editor select { font-size:10px; color:#bdd2eb; background:var(--surface-2); border:1px solid var(--line); padding:4px; border-radius:4px; }
+
+.transport-seek-wrap { grid-column:1 / -1; min-width:0; display:flex; align-items:center; gap:12px; color:#aab6c7; font-size:11px; -webkit-app-region:no-drag; }
+.transport-seek-wrap > span { flex-shrink:0; font-variant-numeric:tabular-nums; }
+.transport-seek-wrap > span:last-child { min-width:64px; text-align:right; }
+.transport-seek { flex:1; min-width:0; height:20px; margin:0; accent-color:var(--cyan); cursor:ew-resize; }
+.beat-ruler { cursor:ew-resize; touch-action:none; user-select:none; }
