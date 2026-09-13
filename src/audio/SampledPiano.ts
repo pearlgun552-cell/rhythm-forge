@@ -13,10 +13,8 @@ interface PianoSample {
   pitch: number;
 }
 
-// A single recorded sample is used for the whole instrument. Every other
-// pitch in the scale is generated at runtime by resampling this buffer via
-// AudioBufferSourceNode.playbackRate (factor = 2 ^ ((pitch - root) / 12)).
-const BASE_PIANO_SAMPLE: PianoSample = { file: 'C4.mp3', pitch: 60 };
+// Built-in samples already shipped with the app. User imports remain rooted at C4.
+const PIANO_SAMPLES: PianoSample[] = Array.from({ length: 7 }, (_, i) => ({ file: `C${i + 1}.mp3`, pitch: (i + 2) * 12 })).concat(Array.from({ length: 6 }, (_, i) => ({ file: `Fs${i + 1}.mp3`, pitch: (i + 2) * 12 + 6 })));
 
 function loadArrayBuffer(url: string): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) => {
@@ -36,39 +34,35 @@ function loadArrayBuffer(url: string): Promise<ArrayBuffer> {
 }
 
 export class SampledPiano {
-  private buffer: AudioBuffer | null = null;
+  private buffers = new Map<number, AudioBuffer>();
+  private generation = 0;
   private readonly liveVoices = new Map<string, PianoVoice>();
   private readonly scheduledVoices = new Set<PianoVoice>();
   private loadPromise: Promise<void> | null = null;
 
-  constructor(private readonly context: AudioContext, private readonly destination: AudioNode) {}
+  constructor(private readonly context: BaseAudioContext, private readonly destination: AudioNode) {}
 
   load(): Promise<void> {
-    if (this.buffer) return Promise.resolve();
+    if (this.buffers.size) return Promise.resolve();
     if (!this.loadPromise) {
+      const generation = this.generation;
       this.loadPromise = (async () => {
         const imported = sampleStore.getImported();
-        if (imported) {
-          this.buffer = await this.context.decodeAudioData(imported.data.slice(0));
-        } else {
-          const { file } = BASE_PIANO_SAMPLE;
-          const url = new URL(`samples/piano/${file}`, document.baseURI).href;
-          const data = await loadArrayBuffer(url);
-          this.buffer = await this.context.decodeAudioData(data.slice(0));
-        }
-      })().catch((error: unknown) => {
-        this.loadPromise = null;
-        throw error;
-      });
+        const entries: Array<[number, AudioBuffer]> = imported
+          ? [[60, await this.context.decodeAudioData(imported.data.slice(0))]]
+          : await Promise.all(PIANO_SAMPLES.map(async sample => {
+            const url = new URL(`samples/piano/${sample.file}`, document.baseURI).href;
+            const data = await loadArrayBuffer(url);
+            return [sample.pitch, await this.context.decodeAudioData(data.slice(0))] as [number, AudioBuffer];
+          }));
+        if (generation === this.generation) this.buffers = new Map(entries);
+      })().catch((error: unknown) => { if (generation === this.generation) this.loadPromise = null; throw error; });
     }
     return this.loadPromise;
   }
 
-  // Clears the decoded source so the next load() picks up the current sample
-  // store value (e.g. after the user imports or removes a sample).
   reset(): void {
-    this.buffer = null;
-    this.loadPromise = null;
+    this.stopAll(); this.generation++; this.buffers.clear(); this.loadPromise = null;
   }
 
   noteOn(voiceId: string, pitch: number, instrument: Instrument, options: VoiceOptions = {}): void {
@@ -135,8 +129,9 @@ export class SampledPiano {
   }
 
   private createVoice(pitch: number, instrument: Instrument, options: VoiceOptions): PianoVoice | null {
-    const rootPitch = BASE_PIANO_SAMPLE.pitch;
-    const buffer = this.buffer;
+    const rootPitch = [...this.buffers.keys()].sort((a, b) => Math.abs(a - pitch) - Math.abs(b - pitch))[0];
+    if (rootPitch === undefined) return null;
+    const buffer = this.buffers.get(rootPitch);
     if (!buffer) return null;
     const source = this.context.createBufferSource();
     const gain = this.context.createGain();

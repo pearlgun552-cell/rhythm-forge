@@ -21,7 +21,7 @@ export class PolySynth {
   private readonly liveVoices = new Map<string, Voice>();
   private readonly scheduledVoices = new Set<Voice>();
 
-  constructor(private readonly context: AudioContext, destination: AudioNode) {
+  constructor(private readonly context: BaseAudioContext, destination: AudioNode) {
     this.output = context.createGain();
     this.output.gain.value = 0.75;
     this.output.connect(destination);

@@ -18,5 +18,15 @@ contextBridge.exposeInMainWorld('rhythmForge', {
     ipcRenderer.on('menu:export-mp3', handler);
     return () => ipcRenderer.removeListener('menu:export-mp3', handler);
   },
+  onProjectCommand: (callback) => {
+    const handler = (_event, command) => callback(command);
+    ipcRenderer.on('menu:project-command', handler);
+    return () => ipcRenderer.removeListener('menu:project-command', handler);
+  },
+  openProject: () => ipcRenderer.invoke('project:open'),
+  saveProject: (content, name, saveAs) => ipcRenderer.invoke('project:save', { content, name, saveAs }),
+  newProject: () => ipcRenderer.send('project:new'),
+  setDirty: (dirty) => ipcRenderer.send('project:dirty', dirty),
+  closeSaved: () => ipcRenderer.send('project:close-saved'),
   setLanguage: (language) => ipcRenderer.send('app:language', language),
 });

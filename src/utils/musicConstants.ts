@@ -14,5 +14,5 @@ export function barsForBeats(beats: number, timeSignature: TimeSignature): numbe
 }
 
 export function snapBeat(value: number, subdivision: number): number {
-  return Math.round(value / subdivision) * subdivision;
+  return subdivision > 0 ? Math.round((value + 1e-9) / subdivision) * subdivision : value;
 }

@@ -1,4 +1,4 @@
-import { memo, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { audioEngine } from '../audio/AudioEngine';
 import { DrumStepSequencer } from '../components/DrumStepSequencer';
@@ -10,12 +10,15 @@ import { scalePitchClasses } from '../utils/musicTheory';
 import { barsForBeats, beatsPerBar, snapBeat } from '../utils/musicConstants';
 import { createId } from '../utils/id';
 
-const PITCH_MIN = 48;
-const PITCH_MAX = 83;
+const PITCH_MIN = 0;
+const PITCH_MAX = 127;
 const ROW_HEIGHT = 26;
 const BEAT_WIDTH = 72;
 const PITCHES = Array.from({ length: PITCH_MAX - PITCH_MIN + 1 }, (_, index) => PITCH_MAX - index);
 const SNAP_OPTIONS = [
+  { label: 'Off', beats: 0 },
+  { label: '1/32', beats: .125 },
+  { label: '1/8T', beats: 1 / 3 },
   { label: '1/4', beats: 1 },
   { label: '1/8', beats: 0.5 },
   { label: '1/16', beats: 0.25 },
@@ -67,10 +70,20 @@ function ScaleGuide({ projectLengthBeats, keyName, sections }: { projectLengthBe
 }
 
 export const PianoRoll = memo(function PianoRoll({ track, selectedNoteId, selectedNoteIds, activePitches }: PianoRollProps) {
-  const { project } = useProjectStore();
+  const { project, gridSnap: snapBeats, selectedClipId } = useProjectStore();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const clip = track?.clips?.find(c => c.id === selectedClipId);
+  const visibleNotes = track?.notes.filter(n => !clip || n.clipId === clip.id) ?? [];
+  useEffect(() => {
+    if (scrollRef.current) {
+      const pitch = visibleNotes.length ? Math.max(...visibleNotes.map(n => n.pitch)) : 77;
+      scrollRef.current.scrollTop = Math.max(0, (PITCH_MAX - pitch - 2) * ROW_HEIGHT);
+      scrollRef.current.scrollLeft = Math.max(0, (clip?.startBeat ?? 0) * BEAT_WIDTH - 40);
+    }
+  }, [track?.id, selectedClipId]);
+  useEffect(() => () => projectStore.endEdit(), []);
   const gridRef = useRef<HTMLDivElement>(null);
   const interactionRef = useRef<MoveInteraction | null>(null);
-  const [snapBeats, setSnapBeats] = useState(0.25);
   const [noteLength, setNoteLength] = useState(0.5);
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
   const [velocityInteraction, setVelocityInteraction] = useState<VelocityInteraction | null>(null);
@@ -88,14 +101,14 @@ export const PianoRoll = memo(function PianoRoll({ track, selectedNoteId, select
     const row = Math.floor((event.clientY - rect.top) / ROW_HEIGHT);
     return {
       pitch: PITCH_MAX - row,
-      start: Math.min(Math.max(0, projectLengthBeats - snapBeats), Math.max(0, snapBeat(rawBeat, snapBeats))),
+      start: Math.min(Math.max(0, projectLengthBeats - Math.max(.010416667, snapBeats)), Math.max(0, snapBeat(rawBeat, snapBeats))),
     };
   };
 
   const createNote = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!track || !gridRef.current) return;
     const point = noteAtPoint(event);
-    if (!point || point.pitch < PITCH_MIN || point.pitch > PITCH_MAX) return;
+    if (!point || point.pitch < PITCH_MIN || point.pitch > PITCH_MAX || (clip && (point.start < clip.startBeat || point.start >= clip.startBeat + clip.durationBeats))) return;
     const duration = Math.min(noteLength, projectLengthBeats - point.start);
     projectStore.addNote(track.id, { id: createId('note'), pitch: point.pitch, start: point.start, duration: Math.max(0.05, duration), velocity: 0.85 });
     void audioEngine.resume().then(() => audioEngine.prepareInstrument(track.instrument)).then(() => {
@@ -124,6 +137,7 @@ export const PianoRoll = memo(function PianoRoll({ track, selectedNoteId, select
       : (selectedNoteIds.includes(note.id) ? selectedNoteIds : [note.id]);
     projectStore.setSelectedNotes(ids);
     const initialNotes = track.notes.filter((item) => ids.includes(item.id)).map((item) => ({ ...item }));
+    projectStore.beginEdit();
     interactionRef.current = { kind: 'move', startX: event.clientX, startY: event.clientY, pointerId: event.pointerId, initialNotes, moved: false };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -132,6 +146,7 @@ export const PianoRoll = memo(function PianoRoll({ track, selectedNoteId, select
     event.stopPropagation();
     const parent = event.currentTarget.parentElement;
     parent?.setPointerCapture(event.pointerId);
+    projectStore.beginEdit();
     interactionRef.current = { kind: 'resize', startX: event.clientX, startY: event.clientY, pointerId: event.pointerId, initialNotes: [{ ...note }], noteId: note.id, moved: false };
   };
 
@@ -158,7 +173,8 @@ export const PianoRoll = memo(function PianoRoll({ track, selectedNoteId, select
     const minStartDelta = Math.max(...interaction.initialNotes.map((note) => -note.start));
     const maxPitchDelta = Math.min(...interaction.initialNotes.map((note) => PITCH_MAX - note.pitch));
     const minPitchDelta = Math.max(...interaction.initialNotes.map((note) => PITCH_MIN - note.pitch));
-    const clampedBeat = Math.max(minStartDelta, deltaBeat);
+    const maxEndDelta = Math.min(...interaction.initialNotes.map(note => projectLengthBeats - note.start - note.duration));
+    const clampedBeat = Math.min(maxEndDelta, Math.max(minStartDelta, deltaBeat));
     const clampedPitch = Math.min(maxPitchDelta, Math.max(minPitchDelta, deltaPitch));
     const changes = Object.fromEntries(interaction.initialNotes.map((note) => [note.id, {
       start: Math.min(projectLengthBeats - note.duration, Math.max(0, note.start + clampedBeat)),
@@ -176,7 +192,7 @@ export const PianoRoll = memo(function PianoRoll({ track, selectedNoteId, select
       const right = Math.max(interaction.startX, event.clientX) - rect.left;
       const top = Math.min(interaction.startY, event.clientY) - rect.top;
       const bottom = Math.max(interaction.startY, event.clientY) - rect.top;
-      const ids = track.notes.filter((note) => {
+      const ids = visibleNotes.filter((note) => {
         const noteLeft = note.start * BEAT_WIDTH;
         const noteRight = noteLeft + note.duration * BEAT_WIDTH;
         const noteTop = (PITCH_MAX - note.pitch) * ROW_HEIGHT;
@@ -188,18 +204,21 @@ export const PianoRoll = memo(function PianoRoll({ track, selectedNoteId, select
     }
     setSelectionBox(null);
     interactionRef.current = null;
+    projectStore.endEdit();
   };
 
   const updateVelocityFromPointer = (event: ReactPointerEvent<HTMLDivElement>, noteId: string) => {
-    const rect = event.currentTarget.getBoundingClientRect();
+    const rect = event.currentTarget.closest('.velocity-lane')!.getBoundingClientRect();
     const velocity = Math.max(0.01, Math.min(1, 1 - (event.clientY - rect.top) / rect.height));
-    projectStore.setNoteVelocities(track?.id ?? '', { [noteId]: velocity });
+    const ids = selectedNoteIds.includes(noteId) ? selectedNoteIds : [noteId];
+    projectStore.setNoteVelocities(track?.id ?? '', Object.fromEntries(ids.map(id => [id, velocity])));
   };
 
   const beginVelocity = (event: ReactPointerEvent<HTMLDivElement>, note: Note) => {
     if (!track || event.button !== 0) return;
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
+    projectStore.beginEdit();
     setVelocityInteraction({ noteId: note.id, pointerId: event.pointerId });
     updateVelocityFromPointer(event, note.id);
   };
@@ -210,22 +229,23 @@ export const PianoRoll = memo(function PianoRoll({ track, selectedNoteId, select
   };
 
   const endVelocity = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (velocityInteraction?.pointerId === event.pointerId) setVelocityInteraction(null);
+    if (velocityInteraction?.pointerId === event.pointerId) { setVelocityInteraction(null); projectStore.endEdit(); }
   };
 
   return (
     <section className="piano-roll panel">
       <div className="piano-roll-toolbar">
-        <div><span>PIANO ROLL</span><h2>{track?.name ?? 'No Track'}</h2></div>
+        <div><span>PIANO ROLL</span><h2>{clip?.name || track?.name || 'No Track'}</h2></div>
         <div className="roll-tools">
-          <label>SNAP <select aria-label="Grid Snap" value={snapBeats} onChange={(event) => setSnapBeats(Number(event.target.value))}>{SNAP_OPTIONS.map((option) => <option key={option.beats} value={option.beats}>{option.label}</option>)}</select></label>
+          {clip && <button className="quantize-button" onClick={() => projectStore.selectClip(null)}>All notes</button>}
+          <label>SNAP <select aria-label="Grid Snap" value={snapBeats} onChange={(event) => projectStore.setGridSnap(Number(event.target.value))}>{SNAP_OPTIONS.map((option) => <option key={option.beats} value={option.beats}>{option.label}</option>)}</select></label>
           <label>LENGTH <select aria-label="Note Length" value={noteLength} onChange={(event) => setNoteLength(Number(event.target.value))}>{[0.25, 0.5, 1, 2, barBeats].map((length) => <option key={length} value={length}>{length === barBeats ? '1 Bar' : `${length} beat${length === 1 ? '' : 's'}`}</option>)}</select></label>
           <button className="quantize-button" type="button" onClick={() => projectStore.quantizeSelectedNotes(snapBeats)} disabled={selectedNoteIds.length === 0}>QUANTIZE</button>
           <span className="roll-legend"><i className="legend-note" /> Shift-click / drag select · drag note to move · edge to resize</span>
           <b>{bars} BARS · {project.timeSignature.numerator}/{project.timeSignature.denominator}</b>
         </div>
       </div>
-      <div className="roll-scroll">
+      <div className="roll-scroll" ref={scrollRef}>
         <div className="piano-column">
           <div className="piano-ruler-spacer" />
           {PITCHES.map((pitch) => <div className={`${isBlackKey(pitch) ? 'piano-key black' : 'piano-key'} ${activePitches.has(pitch) ? 'active' : ''}`} key={pitch}><span>{noteName(pitch)}</span></div>)}
@@ -239,11 +259,12 @@ export const PianoRoll = memo(function PianoRoll({ track, selectedNoteId, select
             onPointerDown={beginBox}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
+            onPointerCancel={() => { interactionRef.current = null; setSelectionBox(null); projectStore.endEdit(); }}
           >
             <ScaleGuide projectLengthBeats={projectLengthBeats} keyName={project.key} sections={project.sections} />
             <RollPlayhead projectLengthBeats={projectLengthBeats} />
             {selectionBox && gridRef.current && <div className="selection-box" style={{ left: Math.min(selectionBox.startX, selectionBox.endX) - gridRef.current.getBoundingClientRect().left, top: Math.min(selectionBox.startY, selectionBox.endY) - gridRef.current.getBoundingClientRect().top, width: Math.abs(selectionBox.endX - selectionBox.startX), height: Math.abs(selectionBox.endY - selectionBox.startY) }} />}
-            {track?.notes.map((note) => (
+            {visibleNotes.map((note) => (
               <button
                 key={note.id}
                 className={selectedNoteIds.includes(note.id) || note.id === selectedNoteId ? 'piano-note selected' : 'piano-note'}
@@ -251,16 +272,18 @@ export const PianoRoll = memo(function PianoRoll({ track, selectedNoteId, select
                 onPointerDown={(event) => beginMove(event, note)}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
+            onPointerCancel={() => { interactionRef.current = null; setSelectionBox(null); projectStore.endEdit(); }}
                 aria-label={`${noteName(note.pitch)} at beat ${note.start}`}
               >
                 {noteName(note.pitch)}
-                <div className="note-resize-handle" onPointerDown={(event) => beginResize(event, note)} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} aria-label={`Resize ${noteName(note.pitch)}`} />
+                <div className="note-resize-handle" onPointerDown={(event) => beginResize(event, note)} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp}
+            onPointerCancel={() => { interactionRef.current = null; setSelectionBox(null); projectStore.endEdit(); }} aria-label={`Resize ${noteName(note.pitch)}`} />
               </button>
             ))}
           </div>
-          <div className="velocity-lane" onPointerMove={moveVelocity} onPointerUp={endVelocity}>
+          <div className="velocity-lane" onPointerMove={moveVelocity} onPointerUp={endVelocity} onPointerCancel={endVelocity}>
             <div className="velocity-lane-label">VELOCITY</div>
-            {track?.notes.map((note) => (
+            {visibleNotes.map((note) => (
               <div
                 key={`velocity-${note.id}`}
                 className={selectedNoteIds.includes(note.id) ? 'velocity-bar selected' : 'velocity-bar'}

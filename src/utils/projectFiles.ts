@@ -1,11 +1,9 @@
-import { PolySynth } from '../audio/PolySynth';
-import { SampledPiano } from '../audio/SampledPiano';
+import { AudioEngine } from '../audio/AudioEngine';
+import { trackEvents } from './musicMath';
 import type { Project } from '../types/music';
-import { LOOP_BEATS } from './musicConstants';
 
 const SAMPLE_RATE = 44100;
 const TAIL_SECONDS = 1.5;
-const START_PAD_SECONDS = 0.05;
 const MP3_KILOBITS = 192;
 
 // Downloads the current project as a portable JSON file.
@@ -17,51 +15,41 @@ export function saveProjectFile(project: Project): void {
 
 // Renders the arrangement into an OfflineAudioContext and encodes it to MP3.
 export async function exportProjectAsMp3(project: Project): Promise<void> {
-  const beatsPerSecond = project.bpm / 60;
-  const loopSeconds = LOOP_BEATS / beatsPerSecond;
-  const length = Math.ceil((loopSeconds + TAIL_SECONDS) * SAMPLE_RATE);
-  const offline = new OfflineAudioContext(2, length, SAMPLE_RATE);
-
-  const master = offline.createGain();
-  master.gain.value = 0.85;
-  master.connect(offline.destination);
-
-  const anySolo = project.tracks.some((track) => track.solo);
-  const activeTracks = project.tracks.filter((track) => !track.mute && (!anySolo || track.solo));
-
-  // Load the sampled source once, before scheduling, so it is decoded at
-  // render time. PolySynth needs no external source.
-  let piano: SampledPiano | null = null;
-  if (activeTracks.some((track) => track.instrument.type === 'sampled-piano')) {
-    piano = new SampledPiano(offline as unknown as AudioContext, master);
-    await piano.load();
-  }
-
-  activeTracks.forEach((track) => {
-    const synth = track.instrument.type === 'sampled-piano'
-      ? (piano as SampledPiano)
-      : new PolySynth(offline as unknown as AudioContext, master);
-    track.notes.forEach((note) => {
-      synth.scheduleNote(
-        note.pitch,
-        START_PAD_SECONDS + note.start / beatsPerSecond,
-        note.duration / beatsPerSecond,
-        track.instrument,
-        { velocity: note.velocity, trackVolume: track.volume, pan: track.pan },
-      );
-    });
-  });
-
-  const rendered = await offline.startRendering();
+  const rendered = await renderProject(project);
   const mp3 = await encodeAudioBufferToMp3(rendered);
   downloadBlob(mp3, `${sanitizeFileName(project.name || 'rhythm-forge')}.mp3`);
+}
+
+export async function exportProjectAsWav(project: Project): Promise<void> {
+  const rendered = await renderProject(project);
+  const wav = encodeAudioBufferToWav(rendered);
+  downloadBlob(wav, `${sanitizeFileName(project.name || 'rhythm-forge')}.wav`);
+}
+
+export async function renderProject(project: Project): Promise<AudioBuffer> {
+  const tail = Math.max(TAIL_SECONDS, ...project.tracks.map(t => t.instrument.adsr.release), project.reverb.enabled ? project.reverb.decay : 0) + .1;
+  const duration = project.projectLengthBeats * 60 / project.bpm;
+  const offline = new OfflineAudioContext(2, Math.ceil((duration + tail) * SAMPLE_RATE), SAMPLE_RATE);
+  const engine = new AudioEngine(offline);
+  engine.syncProject(project);
+  await engine.prepareInstruments(project.tracks.filter(t => t.type === 'instrument').map(t => t.instrument));
+  const anySolo = project.tracks.some(t => t.solo);
+  for (const track of project.tracks) {
+    if (track.mute || (anySolo && !track.solo)) continue;
+    for (const note of trackEvents(track, project, 0, project.projectLengthBeats)) {
+      const time = note.start * 60 / project.bpm;
+      if (track.type === 'drum' && note.drumSound) engine.scheduleDrum(note.drumSound, time, track.id, note.velocity);
+      else engine.scheduleNote(note.pitch, time, Math.min(note.duration, project.projectLengthBeats - note.start) * 60 / project.bpm, track.instrument, { velocity: note.velocity, trackId: track.id });
+    }
+  }
+  return offline.startRendering();
 }
 
 function sanitizeFileName(name: string): string {
   return name.replace(/[\\/:*?"<>|]/g, '_').trim() || 'project';
 }
 
-async function encodeAudioBufferToMp3(buffer: AudioBuffer): Promise<Blob> {
+export async function encodeAudioBufferToMp3(buffer: AudioBuffer): Promise<Blob> {
   const { Mp3Encoder } = await import('@breezystack/lamejs');
   const left = new Int16Array(buffer.length);
   const right = new Int16Array(buffer.length);
@@ -85,6 +73,23 @@ async function encodeAudioBufferToMp3(buffer: AudioBuffer): Promise<Blob> {
   if (tail.length) chunks.push(tail);
 
   return new Blob(chunks as BlobPart[], { type: 'audio/mpeg' });
+}
+
+export function encodeAudioBufferToWav(buffer: AudioBuffer): Blob {
+  const channels = 2;
+  const bytesPerSample = 2;
+  const dataLength = buffer.length * channels * bytesPerSample;
+  const bytes = new ArrayBuffer(44 + dataLength);
+  const view = new DataView(bytes);
+  const write = (offset: number, value: string) => [...value].forEach((char, index) => view.setUint8(offset + index, char.charCodeAt(0)));
+  write(0, 'RIFF'); view.setUint32(4, 36 + dataLength, true); write(8, 'WAVE'); write(12, 'fmt ');
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, channels, true);
+  view.setUint32(24, buffer.sampleRate, true); view.setUint32(28, buffer.sampleRate * channels * bytesPerSample, true);
+  view.setUint16(32, channels * bytesPerSample, true); view.setUint16(34, 16, true); write(36, 'data'); view.setUint32(40, dataLength, true);
+  const left = buffer.getChannelData(0); const right = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : left;
+  let offset = 44;
+  for (let index = 0; index < buffer.length; index += 1) { view.setInt16(offset, floatToInt16(left[index] ?? 0), true); offset += 2; view.setInt16(offset, floatToInt16(right[index] ?? 0), true); offset += 2; }
+  return new Blob([bytes], { type: 'audio/wav' });
 }
 
 function floatToInt16(value: number): number {

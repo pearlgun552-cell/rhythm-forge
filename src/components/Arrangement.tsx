@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { useTransport } from '../sequencer/useTransport';
-import { projectStore } from '../store/projectStore';
+import { MidiClips } from './MidiClips';
+import { projectStore, useProjectStore } from '../store/projectStore';
 import type { Project, Track } from '../types/music';
 import { barsForBeats, beatsPerBar } from '../utils/musicConstants';
 
@@ -19,6 +20,9 @@ function ArrangementPlayhead({ project }: { project: Project }) {
 }
 
 export const Arrangement = memo(function Arrangement({ project, tracks, selectedTrackId, onSeek }: ArrangementProps) {
+  const { selectedClipId } = useProjectStore();
+  const selectedTrack = tracks.find(t => t.id === selectedTrackId);
+  const selectedClip = selectedTrack?.clips?.find(c => c.id === selectedClipId);
   const bars = barsForBeats(project.projectLengthBeats, project.timeSignature);
   const barBeats = beatsPerBar(project.timeSignature);
   return (
@@ -27,7 +31,21 @@ export const Arrangement = memo(function Arrangement({ project, tracks, selected
         <div><span>ARRANGEMENT</span><strong>{bars} BARS · {project.timeSignature.numerator}/{project.timeSignature.denominator}</strong></div>
         <button className="section-add-button" onClick={() => projectStore.addSection('')} aria-label="Add Section">＋ Section</button>
       </div>
-      <div className="arrangement-ruler" style={{ gridTemplateColumns: `repeat(${bars}, 1fr)` }}>
+      <div className="clip-toolbar">
+        <button disabled={selectedTrack?.type !== 'instrument'} onClick={() => projectStore.addClip(selectedTrackId)}>＋ MIDI Clip</button>
+        {selectedClip && <>
+          <input aria-label="Clip name" value={selectedClip.name} onChange={e => projectStore.updateClip(selectedTrackId, selectedClip.id, { name: e.target.value })} />
+          <label>START <input aria-label="Clip start" type="number" step=".25" value={selectedClip.startBeat} onChange={e => projectStore.updateClip(selectedTrackId, selectedClip.id, { startBeat: Number(e.target.value) })} /></label>
+          <label>LEN <input aria-label="Clip length" type="number" step=".25" value={selectedClip.durationBeats} onChange={e => projectStore.updateClip(selectedTrackId, selectedClip.id, { durationBeats: Number(e.target.value) })} /></label>
+          <button onClick={() => projectStore.duplicateClip(selectedTrackId, selectedClip.id)}>Duplicate Clip</button>
+          <button onClick={() => projectStore.deleteClip(selectedTrackId, selectedClip.id)}>Delete Clip</button>
+        </>}
+      </div>
+      <div className="arrangement-timeline" style={{ minWidth: Math.max(600, project.projectLengthBeats * 6) }}>
+      <div className="arrangement-ruler" onPointerDown={event => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        onSeek?.((event.clientX - rect.left) / rect.width * project.projectLengthBeats);
+      }} style={{ gridTemplateColumns: `repeat(${bars}, 1fr)` }}>
         {Array.from({ length: bars }, (_, bar) => <i key={bar}>{bar + 1}</i>)}
       </div>
       <div className="section-lane" style={{ marginLeft: 88 }}>
@@ -42,7 +60,7 @@ export const Arrangement = memo(function Arrangement({ project, tracks, selected
           </div>
         ))}
       </div>
-      <div className="section-editor-list">
+      <details className="section-editor-list"><summary>Sections · edit names, positions and keys</summary>
         {project.sections.map((section) => (
           <div className="section-editor-row" key={section.id}>
             <input
@@ -53,12 +71,12 @@ export const Arrangement = memo(function Arrangement({ project, tracks, selected
             <label>START <input type="number" min="0" step="0.25" value={section.startBeat} onChange={(event) => projectStore.updateSection(section.id, { startBeat: Number(event.target.value) })} /></label>
             <label>LEN <input type="number" min="0.25" step="0.25" value={section.durationBeats} onChange={(event) => projectStore.updateSection(section.id, { durationBeats: Number(event.target.value) })} /></label>
             <select aria-label={`Key override for ${section.name}`} value={section.keyOverride ?? ''} onChange={(event) => projectStore.updateSection(section.id, { keyOverride: event.target.value || undefined })}>
-              {SECTION_KEYS.map((key) => <option key={key} value={key}>{key || `Project · ${project.key}`}</option>)}
+              {[...new Set([...SECTION_KEYS, section.keyOverride || '', project.key])].map((key) => <option key={key} value={key}>{key || `Project · ${project.key}`}</option>)}
             </select>
             <button className="section-delete" onClick={() => projectStore.deleteSection(section.id)} aria-label={`Delete section ${section.name}`}>×</button>
           </div>
         ))}
-      </div>
+      </details>
       <div className="arrangement-body" onPointerDown={(event) => {
         if (!onSeek || event.target !== event.currentTarget) return;
         const rect = event.currentTarget.getBoundingClientRect();
@@ -68,16 +86,12 @@ export const Arrangement = memo(function Arrangement({ project, tracks, selected
         {tracks.map((track) => (
           <div className={track.id === selectedTrackId ? 'arrangement-lane selected' : 'arrangement-lane'} key={track.id}>
             <span>{track.name}</span>
-            <div className="clip">
-              {track.type === 'instrument' && track.notes.map((note) => (
-                <i key={note.id} style={{ left: `${(note.start / project.projectLengthBeats) * 100}%`, width: `${Math.max(0.35, note.duration / project.projectLengthBeats * 100)}%` }} />
-              ))}
-              {track.type === 'drum' && <i className="drum-clip" style={{ left: 0, width: '100%' }} />}
-            </div>
+            <MidiClips track={track} length={project.projectLengthBeats} onSeek={onSeek} />
           </div>
         ))}
       </div>
-      <span className="arrangement-beat-note">{barBeats} beats / bar · Sections are planning markers; notes are not moved automatically.</span>
+      </div>
+      <span className="arrangement-beat-note">{barBeats} beats / bar · Drag a clip to move · right edge to resize · double-click a lane to create. Sections remain independent.</span>
     </section>
   );
 });

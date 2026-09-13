@@ -1,10 +1,10 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { audioEngine } from '../audio/AudioEngine';
-import { COMPUTER_KEY_LABELS, noteName } from '../instruments/keyboardMap';
+import { COMPUTER_KEY_LABELS, keyRootPitch, noteName, scaleKeyboardOffsets } from '../instruments/keyboardMap';
 import { GRAND_PIANO_PRESET, OSCILLATOR_ENVELOPES, envelopeEquals } from '../instruments/presets';
 import { useLanguage, type MessageKey } from '../i18n';
 import { projectStore } from '../store/projectStore';
-import { sampleStore, useImportedSample } from '../store/sampleStore';
+import { useImportedSample } from '../store/sampleStore';
 import type { ADSREnvelope, InstrumentPreset, InstrumentType, OscillatorWaveform, Project, SynthPreset, Track } from '../types/music';
 
 interface InstrumentPanelProps {
@@ -15,6 +15,11 @@ interface InstrumentPanelProps {
   onOctaveChange: (octave: number) => void;
   project: Project;
   onExportMp3: () => void;
+  onExportWav: () => void;
+  keyboardKey: string;
+  exportBusy: boolean;
+  keyboardMode: 'chromatic' | 'scale';
+  onKeyboardModeChange: (mode: 'chromatic' | 'scale') => void;
 }
 
 const WAVEFORMS: OscillatorWaveform[] = ['sine', 'square', 'sawtooth', 'triangle'];
@@ -48,7 +53,7 @@ function isCustomOscillatorState(instrument: { oscillator: OscillatorWaveform; a
   return instrument.oscCustom === true || !envelopeEquals(instrument.adsr, OSCILLATOR_ENVELOPES[instrument.oscillator]);
 }
 
-export const InstrumentPanel = memo(function InstrumentPanel({ track, synths, octave, activePitches, onOctaveChange, project, onExportMp3 }: InstrumentPanelProps) {
+export const InstrumentPanel = memo(function InstrumentPanel({ track, synths, octave, activePitches, onOctaveChange, project, onExportMp3, onExportWav, keyboardMode, onKeyboardModeChange, keyboardKey, exportBusy }: InstrumentPanelProps) {
   const [pianoLoadState, setPianoLoadState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [soundMenuOpen, setSoundMenuOpen] = useState(false);
   const [dialog, setDialog] = useState<{ mode: 'new' } | { mode: 'rename'; synth: SynthPreset } | null>(null);
@@ -198,7 +203,7 @@ export const InstrumentPanel = memo(function InstrumentPanel({ track, synths, oc
     setSoundMenuOpen(false);
     setPianoLoadState('loading');
     const data = await file.arrayBuffer();
-    sampleStore.setImported({ data, name: file.name, mimeType: file.type });
+    projectStore.setImportedSample({ data, name: file.name, mimeType: file.type });
     const next = { ...GRAND_PIANO_PRESET.instrument, presetId: GRAND_PIANO_PRESET.id };
     projectStore.updateInstrument(track.id, next);
     try {
@@ -213,7 +218,7 @@ export const InstrumentPanel = memo(function InstrumentPanel({ track, synths, oc
   const resetSample = async () => {
     setSoundMenuOpen(false);
     setPianoLoadState('loading');
-    sampleStore.setImported(null);
+    projectStore.setImportedSample(null);
     const next = { ...GRAND_PIANO_PRESET.instrument, presetId: GRAND_PIANO_PRESET.id };
     projectStore.updateInstrument(track.id, next);
     try {
@@ -411,6 +416,10 @@ export const InstrumentPanel = memo(function InstrumentPanel({ track, synths, oc
       {track.type === 'instrument' && <section className="instrument-section keyboard-section">
         <div className="keyboard-header">
           <label className="control-label">{t('instrument.keyboard')}</label>
+          <div className="keyboard-mode" role="group" aria-label="Keyboard mode">
+            <button type="button" className={keyboardMode === 'chromatic' ? 'active' : ''} onClick={() => onKeyboardModeChange('chromatic')}>Chromatic</button>
+            <button type="button" className={keyboardMode === 'scale' ? 'active' : ''} onClick={() => onKeyboardModeChange('scale')}>Scale</button>
+          </div>
           <div className="octave-control">
             <button onClick={() => onOctaveChange(Math.max(1, octave - 1))} aria-label={t('instrument.octDown')}>−</button>
             <span>{t('instrument.octLabel')} {octave}</span>
@@ -419,7 +428,9 @@ export const InstrumentPanel = memo(function InstrumentPanel({ track, synths, oc
         </div>
         <div className="computer-keys">
           {OFFSETS.map((offset, index) => {
-            const pitch = (octave + 1) * 12 + offset;
+            const pitch = keyboardMode === 'scale'
+              ? (octave + 1) * 12 + keyRootPitch(keyboardKey) + (scaleKeyboardOffsets(keyboardKey)[index] ?? offset)
+              : (octave + 1) * 12 + offset;
             return (
               <div className={activePitches.has(pitch) ? 'computer-key active' : 'computer-key'} key={pitch}>
                 <b>{COMPUTER_KEY_LABELS[index]}</b><small>{noteName(pitch)}</small>
@@ -427,7 +438,7 @@ export const InstrumentPanel = memo(function InstrumentPanel({ track, synths, oc
             );
           })}
         </div>
-        <p><kbd>Z</kbd>/<kbd>X</kbd> 切换八度 · 松开按键即 Note Off</p>
+        <p>{keyboardMode === 'scale' ? `${keyboardKey} · ` : 'Chromatic · '}<kbd>Z</kbd>/<kbd>X</kbd> 切换八度 · 松开按键即 Note Off</p>
       </section>}
 
       <section className="instrument-section reverb-section">
@@ -439,7 +450,8 @@ export const InstrumentPanel = memo(function InstrumentPanel({ track, synths, oc
       <section className="instrument-section quick-actions">
         <label className="control-label">PROJECT TOOLS</label>
         <div className="quick-action-row">
-          <button type="button" onClick={onExportMp3}>Export MP3</button>
+          <button type="button" onClick={onExportMp3} disabled={exportBusy}>Export MP3</button>
+          <button type="button" onClick={onExportWav} disabled={exportBusy}>Export WAV</button>
           <button type="button" onClick={() => setLanguage(language === 'zh' ? 'en' : 'zh')}>{language === 'zh' ? 'English' : '中文'}</button>
         </div>
       </section>

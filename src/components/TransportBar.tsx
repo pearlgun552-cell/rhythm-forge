@@ -20,6 +20,9 @@ interface TransportBarProps {
   onRecord: () => void;
   onMetronomeChange: (enabled: boolean) => void;
   onSave: () => void;
+  onNew: () => void;
+  onSaveAs: () => void;
+  busy: boolean;
   onExport: () => void;
   onImport: () => void;
   onUndo: () => void;
@@ -89,12 +92,12 @@ export function TransportBar(props: TransportBarProps) {
         <span className="time-signature-readout">{props.project.timeSignature.numerator}/{props.project.timeSignature.denominator} · {props.project.bpm} BPM</span>
         <label className="compact-field">KEY
           <select aria-label="Key" value={props.project.key} onChange={(event) => props.onKeyChange(event.target.value)}>
-            {KEYS.map((key) => <option key={key}>{key}</option>)}
+            {[...new Set([...KEYS, props.project.key])].map((key) => <option key={key}>{key}</option>)}
           </select>
         </label>
         <label className="compact-field">LENGTH
           <select aria-label="Project Length" value={props.project.projectLengthBeats} onChange={(event) => props.onProjectLengthChange(Number(event.target.value))}>
-            {[128, 256, 512].map((beats) => <option key={beats} value={beats}>{barsForBeats(beats, props.project.timeSignature)} bars</option>)}
+            {[...new Set([16, 32, 64, 128, 256, 512, 1024, props.project.projectLengthBeats])].sort((a, b) => a - b).map((beats) => <option key={beats} value={beats}>{barsForBeats(beats, props.project.timeSignature)} bars</option>)}
           </select>
         </label>
         <button className={props.metronome ? 'text-control active' : 'text-control'} onClick={() => props.onMetronomeChange(!props.metronome)} aria-pressed={props.metronome}>
@@ -103,11 +106,13 @@ export function TransportBar(props: TransportBarProps) {
         <button className={props.project.loopEnabled ? 'text-control active' : 'text-control'} onClick={() => props.onLoopChange(!props.project.loopEnabled)} aria-pressed={props.project.loopEnabled}>LOOP</button>
         <label className="compact-field loop-field">FROM<input aria-label="Loop Start" type="number" min="0" max={props.project.loopEndBeat - 0.25} step="0.25" value={props.project.loopStartBeat} onChange={(event) => props.onLoopStartChange(Number(event.target.value))} /></label>
         <label className="compact-field loop-field">TO<input aria-label="Loop End" type="number" min={props.project.loopStartBeat + 0.25} max={props.project.projectLengthBeats} step="0.25" value={props.project.loopEndBeat} onChange={(event) => props.onLoopEndChange(Number(event.target.value))} /></label>
-        <button className="text-control project-file-button" onClick={props.onImport}>Import</button>
-        <button className="text-control project-file-button" onClick={props.onExport}>Export</button>
+        <button className="text-control project-file-button" onClick={props.onNew} disabled={props.busy}>New</button>
+        <button className="text-control project-file-button" onClick={props.onImport} disabled={props.busy}>Open</button>
+        <button className="text-control project-file-button" onClick={props.onSaveAs} disabled={props.busy}>Save As</button>
+        <button className="text-control project-file-button" onClick={props.onExport}>Export JSON</button>
         <button className="text-control project-file-button" onClick={props.onUndo} disabled={!props.canUndo} title="Undo (⌘Z)">↶</button>
         <button className="text-control project-file-button" onClick={props.onRedo} disabled={!props.canRedo} title="Redo (⇧⌘Z)">↷</button>
-        <button className="save-button" onClick={props.onSave}>Save <span>{props.isDirty ? '•' : '✓'}</span></button>
+        <button className="save-button" onClick={props.onSave} disabled={props.busy}>Save <span>{props.isDirty ? '•' : '✓'}</span></button>
       </div>
     </header>
   );

@@ -39,7 +39,16 @@ export interface SynthPreset {
   customAdsr?: ADSREnvelope;
 }
 
+export interface MidiClip {
+  id: string;
+  name: string;
+  startBeat: number;
+  durationBeats: number;
+}
+
 export interface Note {
+  clipId?: string;
+  drumSound?: DrumSound;
   id: string;
   pitch: number;
   start: number;
@@ -77,9 +86,11 @@ export interface Track {
   instrument: Instrument;
   notes: Note[];
   drumPattern?: DrumPattern;
+  clips?: MidiClip[];
 }
 
 export interface Project {
+  importedSample?: { name: string; mimeType: string; base64: string };
   id: string;
   schemaVersion: number;
   name: string;

@@ -71,7 +71,7 @@ export function createDefaultProject(): Project {
   track.instrument = { ...defaultInstrument, presetId: synth.id };
   return {
     id: createId('project'),
-    schemaVersion: 3,
+    schemaVersion: 4,
     name: 'New Rhythm Project',
     bpm: 174,
     key: 'C minor',
